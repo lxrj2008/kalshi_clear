@@ -35,10 +35,7 @@ class BaseSQLRepository(ABC):
                 cursor.executemany(statement, rows)
                 connection.commit()
         except pyodbc.Error as exc:  # pragma: no cover - depends on driver
-            self.logger.error(
-                "Bulk insert failed",
-                extra={"statement": statement, "error": str(exc)},
-            )
+            self.logger.error("Bulk insert failed: %s", exc)
             raise DatabaseSaveError("Unable to persist rows to SQL Server") from exc
         self.logger.info("Inserted %s rows", len(rows))
         return len(rows)

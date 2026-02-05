@@ -24,7 +24,7 @@ def main() -> None:
 
 	if client.auth_enabled:
 		try:
-			records = series_service.list_series_records(status="trading")
+			records = series_service.list_series_records()
 			logger.info("Received %s series rows", len(records))
 			pprint([record.to_dict() for record in records[:5]])
 			logger.debug(

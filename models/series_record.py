@@ -15,6 +15,8 @@ class SeriesRecord:
     title: str
     category: str
     status: Optional[str]
+    add_time: Optional["datetime"] = None
+    update_time: Optional["datetime"] = None
 
     @classmethod
     def from_api(cls, item: Series) -> "SeriesRecord":
@@ -32,7 +34,14 @@ class SeriesRecord:
 
     def to_sql_params(self) -> tuple[Any, ...]:
         """Return values in a stable column order for executemany()."""
-        return (self.ticker, self.title, self.category, self.status)
+        return (
+            self.ticker,
+            self.title,
+            self.category,
+            self.status,
+            self.add_time,
+            self.update_time,
+        )
 
 
 __all__ = ["SeriesRecord"]

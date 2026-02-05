@@ -1,6 +1,7 @@
 """Utilities for persisting Kalshi series data into SQL Server."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional, Sequence
 
 from config import KalshiSettings
@@ -21,15 +22,25 @@ class SeriesRepository(BaseSQLRepository):
         self.table_name = table_name
 
     def save_series(self, records: Sequence[SeriesRecord]) -> int:
-        params = [record.to_sql_params() for record in records]
+        params = [
+            (
+                record.ticker,
+                record.title,
+                record.category,
+                record.status,
+                record.add_time or datetime.utcnow(),
+                record.update_time or datetime.utcnow(),
+            )
+            for record in records
+        ]
         self.logger.debug("Prepared %s parameter sets for series insert", len(params))
         return self.save_many(params)
 
     @property
     def insert_statement(self) -> str:  # type: ignore[override]
         return (
-            f"INSERT INTO {self.table_name} (ticker, title, category, status) "
-            "VALUES (?, ?, ?, ?)"
+            f"INSERT INTO {self.table_name} (ticker, title, category, status, AddTime, UpdateTime) "
+            "VALUES (?, ?, ?, ?, ?, ?)"
         )
 
 
