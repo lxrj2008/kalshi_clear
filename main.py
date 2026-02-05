@@ -21,8 +21,13 @@ def main() -> None:
 
 	if client.auth_enabled:
 		try:
-			response = series_service.list_series(status="trading")
-			pprint(response)
+			records = series_service.list_series_records(status="trading")
+			logger.info("Received %s series rows", len(records))
+			pprint([record.to_dict() for record in records[:5]])
+			logger.debug(
+				"Prepared SQL parameter sample",
+				extra={"params": records[0].to_sql_params() if records else None},
+			)
 		except KalshiAPIError as api_error:
 			logger.error("Series request failed: %s", api_error)
 	else:
