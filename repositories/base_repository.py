@@ -28,6 +28,9 @@ class BaseSQLRepository(ABC):
             self.logger.info("No rows supplied; skipping insert.")
             return 0
         statement = self.insert_statement
+        return self._executemany(statement, rows)
+
+    def _executemany(self, statement: str, rows: Sequence[tuple[object, ...]]) -> int:
         try:
             with self._connect() as connection:
                 cursor = connection.cursor()
