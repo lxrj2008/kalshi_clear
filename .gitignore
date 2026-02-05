@@ -1,0 +1,23 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+coverage.xml
+htmlcov/
+
+# Editor
+.vscode/
+.idea/
+
+# Local files
+.env
+logs/
+secrets/
