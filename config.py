@@ -44,6 +44,36 @@ class KalshiSettings(BaseSettings):
         validation_alias="LOG_DIRECTORY",
         description="Directory where log files should be written",
     )
+    sqlserver_host: str = Field(
+        "localhost",
+        validation_alias="SQLSERVER_HOST",
+        description="SQL Server hostname or IP",
+    )
+    sqlserver_port: int = Field(
+        1433,
+        validation_alias="SQLSERVER_PORT",
+        description="SQL Server TCP port",
+    )
+    sqlserver_database: str = Field(
+        "KalshiClear",
+        validation_alias="SQLSERVER_DATABASE",
+        description="Target SQL Server database name",
+    )
+    sqlserver_username: str = Field(
+        "sa",
+        validation_alias="SQLSERVER_USERNAME",
+        description="SQL Server login user",
+    )
+    sqlserver_password: Optional[str] = Field(
+        None,
+        validation_alias="SQLSERVER_PASSWORD",
+        description="SQL Server login password",
+    )
+    sqlserver_driver: str = Field(
+        "ODBC Driver 18 for SQL Server",
+        validation_alias="SQLSERVER_DRIVER",
+        description="Installed ODBC driver name",
+    )
 
     @field_validator("private_key_path", mode="before")
     @classmethod
@@ -69,4 +99,24 @@ class KalshiSettings(BaseSettings):
             raise FileNotFoundError(
                 f"Private key file not found at {self.private_key_path}"
             ) from exc
+
+    def build_sqlserver_connection_string(self) -> str:
+        """Construct a pyodbc-friendly connection string."""
+        parts = [
+            f"DRIVER={{{self.sqlserver_driver}}}",
+            f"SERVER={self.sqlserver_host},{self.sqlserver_port}",
+            f"DATABASE={self.sqlserver_database}",
+            "Encrypt=yes",
+        ]
+        if self.sqlserver_username:
+            parts.append(f"UID={self.sqlserver_username}")
+        if self.sqlserver_password:
+            parts.append(f"PWD={self.sqlserver_password}")
+        parts.append("TrustServerCertificate=yes")
+        parts.append("Connection Timeout=15")
+        return ";".join(parts)
+
+    @property
+    def sqlserver_connection_string(self) -> str:
+        return self.build_sqlserver_connection_string()
 

@@ -10,6 +10,8 @@ from kalshi_client import (
 	KalshiAPIError,
 )
 from logging_setup import configure_logging
+from repositories.base_repository import DatabaseSaveError
+from repositories.series_repository import SeriesRepository
 from services.series_service import SeriesService
 
 
@@ -18,6 +20,7 @@ def main() -> None:
 	logger = configure_logging(settings.log_level, log_dir=settings.log_directory)
 	client = KalshiAPIClient(settings, logger=logger)
 	series_service = SeriesService(client)
+	series_repository = SeriesRepository(settings, logger=logger)
 
 	if client.auth_enabled:
 		try:
@@ -28,8 +31,12 @@ def main() -> None:
 				"Prepared SQL parameter sample",
 				extra={"params": records[0].to_sql_params() if records else None},
 			)
+			inserted = series_repository.save_series(records)
+			logger.info("Persisted %s series rows to SQL Server", inserted)
 		except KalshiAPIError as api_error:
 			logger.error("Series request failed: %s", api_error)
+		except DatabaseSaveError as db_error:
+			logger.error("Failed to persist series data: %s", db_error)
 	else:
 		logger.warning("Skipping authenticated example because credentials are missing.")
 
