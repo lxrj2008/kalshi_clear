@@ -42,17 +42,33 @@ def main() -> None:
 		except DatabaseSaveError as db_error:
 			logger.error("Failed to persist series data: %s", db_error)
 		try:
-			event_records, milestones, cursor = events_service.list_event_records(
-				limit=25,
-				with_nested_markets=False,
-			)
-			logger.info("Fetched %s events (cursor=%s)", len(event_records), cursor)
-			pprint([record.to_dict() for record in event_records[:5]])
-			if milestones:
-				logger.info("Received %s milestones", len(milestones))
-			if event_records:
-				upserted = event_repository.save_events(event_records)
-				logger.info("Persisted %s event rows to SQL Server", upserted)
+			cursor = None
+			total_rows = 0
+			page = 1
+			while True:
+				event_records, milestones, cursor = events_service.list_event_records(
+					limit=200,
+					cursor=cursor,
+					with_nested_markets=False,
+				)
+				logger.info(
+					"Fetched %s events on page %s (next cursor=%s)",
+					len(event_records),
+					page,
+					cursor,
+				)
+				if page == 1:
+					pprint([record.to_dict() for record in event_records[:5]])
+				if milestones:
+					logger.info("Received %s milestones on page %s", len(milestones), page)
+				if event_records:
+					upserted = event_repository.save_events(event_records)
+					logger.info("Persisted %s event rows to SQL Server", upserted)
+					total_rows += upserted
+				page += 1
+				if not cursor:
+					break
+			logger.info("Completed event sync; total rows persisted: %s", total_rows)
 		except KalshiAPIError as api_error:
 			logger.error("Events request failed: %s", api_error)
 		except DatabaseSaveError as db_error:
