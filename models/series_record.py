@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from typing import Any, Optional
 
 from kalshi_python.models.series import Series
@@ -15,8 +16,8 @@ class SeriesRecord:
     title: str
     category: str
     status: Optional[str]
-    add_time: Optional["datetime"] = None
-    update_time: Optional["datetime"] = None
+    add_time: Optional[datetime] = None
+    update_time: Optional[datetime] = None
 
     @classmethod
     def from_api(cls, item: Series) -> "SeriesRecord":

@@ -11,7 +11,9 @@ from kalshi_client import (
 )
 from logging_setup import configure_logging
 from repositories.base_repository import DatabaseSaveError
+from repositories.event_repository import EventRepository
 from repositories.series_repository import SeriesRepository
+from services.events_service import EventsService
 from services.series_service import SeriesService
 
 
@@ -20,7 +22,9 @@ def main() -> None:
 	logger = configure_logging(settings.log_level, log_dir=settings.log_directory)
 	client = KalshiAPIClient(settings, logger=logger)
 	series_service = SeriesService(client)
+	events_service = EventsService(client)
 	series_repository = SeriesRepository(settings, logger=logger)
+	event_repository = EventRepository(settings, logger=logger)
 
 	if client.auth_enabled:
 		try:
@@ -37,6 +41,22 @@ def main() -> None:
 			logger.error("Series request failed: %s", api_error)
 		except DatabaseSaveError as db_error:
 			logger.error("Failed to persist series data: %s", db_error)
+		try:
+			event_records, milestones, cursor = events_service.list_event_records(
+				limit=25,
+				with_nested_markets=False,
+			)
+			logger.info("Fetched %s events (cursor=%s)", len(event_records), cursor)
+			pprint([record.to_dict() for record in event_records[:5]])
+			if milestones:
+				logger.info("Received %s milestones", len(milestones))
+			if event_records:
+				upserted = event_repository.save_events(event_records)
+				logger.info("Persisted %s event rows to SQL Server", upserted)
+		except KalshiAPIError as api_error:
+			logger.error("Events request failed: %s", api_error)
+		except DatabaseSaveError as db_error:
+			logger.error("Failed to persist event data: %s", db_error)
 	else:
 		logger.warning("Skipping authenticated example because credentials are missing.")
 
