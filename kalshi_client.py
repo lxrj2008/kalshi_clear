@@ -106,7 +106,7 @@ class KalshiAPIClient:
     ) -> None:
         duration_ms = (time.perf_counter() - start) * 1000
         self.logger.error(
-            "Kalshi request failed",
+            f"Kalshi request failed：{str(error)}",
             extra={
                 "operation": operation,
                 "authenticated": authenticated,
