@@ -24,7 +24,7 @@ def main() -> None:
 	logger = configure_logging(settings.log_level, log_dir=settings.log_directory)
 	client = KalshiAPIClient(settings, logger=logger)
 	series_service = SeriesService(client)
-	events_service = EventsService(client)
+	events_service = EventsService(client, logger=logger)
 	markets_service = MarketsService(client, logger=logger)
 	series_repository = SeriesRepository(settings, logger=logger)
 	event_repository = EventRepository(settings, logger=logger)

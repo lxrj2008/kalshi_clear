@@ -1,11 +1,16 @@
 """Normalized representation of Kalshi events for downstream processing."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any, List, Optional
 
-from kalshi_python.models.event import Event
+
+def _get_value(source: Any, attribute: str) -> Any:
+    if isinstance(source, Mapping):
+        return source.get(attribute)
+    return getattr(source, attribute, None)
 
 
 @dataclass(frozen=True)
@@ -20,14 +25,14 @@ class EventRecord:
     update_time: Optional[datetime] = None
 
     @classmethod
-    def from_api(cls, item: Event) -> "EventRecord":
+    def from_api(cls, item: Any) -> "EventRecord":
         return cls(
-            event_ticker=item.event_ticker,
-            series_ticker=item.series_ticker,
-            sub_title=item.sub_title,
-            title=item.title,
-            status=item.status,
-            markets=item.markets,
+            event_ticker=str(_get_value(item, "event_ticker") or ""),
+            series_ticker=_get_value(item, "series_ticker"),
+            sub_title=_get_value(item, "sub_title"),
+            title=_get_value(item, "title"),
+            status=_get_value(item, "status"),
+            markets=_get_value(item, "markets"),
         )
 
     def to_dict(self) -> dict[str, Any]:
