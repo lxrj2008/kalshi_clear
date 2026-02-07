@@ -119,3 +119,8 @@ class KalshiAPIClient:
     def auth_enabled(self) -> bool:
         return self._auth_enabled
 
+    @property
+    def sdk_client(self) -> kalshi_python.KalshiClient:
+        """Expose the raw Kalshi SDK client for specialized scenarios."""
+        return self._client
+
