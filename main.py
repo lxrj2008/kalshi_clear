@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pprint import pprint
+from time import sleep
 
 from config import KalshiSettings
 from kalshi_client import (
@@ -101,6 +102,7 @@ def main() -> None:
 				if not market_cursor:
 					break
 				market_page += 1
+				sleep(0.01)
 			logger.info(
 				"Completed market sync; total rows persisted: %s",
 				market_total_rows,
