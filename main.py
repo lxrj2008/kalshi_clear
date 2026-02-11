@@ -1,6 +1,7 @@
 """Entry point demonstrating the reusable Kalshi API client framework."""
 from __future__ import annotations
 
+import json
 from pprint import pprint
 from time import sleep
 

@@ -20,7 +20,7 @@ class KalshiSettings(BaseSettings):
     )
 
     host: str = Field(
-        "https://api.elections.kalshi.com/trade-api/v2",
+        "https://api.elections.kalshi.co/trade-api/v2",
         validation_alias="KALSHI_HOST",
         description="Kalshi API base URL",
     )
