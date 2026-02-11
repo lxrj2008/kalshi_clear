@@ -31,6 +31,9 @@ def main() -> None:
 	series_repository = SeriesRepository(settings, logger=logger)
 	event_repository = EventRepository(settings, logger=logger)
 	market_repository = MarketRepository(settings, logger=logger)
+	# response1 = client.call(
+    #         "get_settlements_without_preload_content", authenticated=True)
+	# response=client.sdk_client.get_settlements()
 
 	if client.auth_enabled:
 		try:
