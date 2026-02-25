@@ -32,17 +32,18 @@ class EventRepository(BaseSQLRepository):
     def insert_statement(self) -> str:  # type: ignore[override]
         return (
             f"MERGE {self.table_name} AS target "
-            "USING (VALUES (?, ?, ?, ?, ?, ?)) AS source "
-            "(event_ticker, series_ticker, title, sub_title, add_time, update_time) "
+            "USING (VALUES (?, ?, ?, ?, ?, ?, ?)) AS source "
+            "(event_ticker, series_ticker, title, sub_title, status, add_time, update_time) "
             "ON target.event_ticker = source.event_ticker "
             "WHEN MATCHED THEN UPDATE SET "
             "title = source.title, "
             "sub_title = source.sub_title, "
             "series_ticker = source.series_ticker, "
+            "status = source.status, "
             "UpdateTime = source.update_time "
             "WHEN NOT MATCHED THEN INSERT "
-            "(event_ticker, series_ticker, title, sub_title, AddTime, UpdateTime) "
-            "VALUES (source.event_ticker, source.series_ticker, source.title, source.sub_title, source.add_time, source.update_time);"
+            "(event_ticker, series_ticker, title, sub_title, status, AddTime, UpdateTime) "
+            "VALUES (source.event_ticker, source.series_ticker, source.title, source.sub_title, source.status, source.add_time, source.update_time);"
         )
 
     def _build_row(self, record: EventRecord) -> tuple[object, ...]:
@@ -54,6 +55,7 @@ class EventRepository(BaseSQLRepository):
             record.series_ticker,
             record.title,
             record.sub_title,
+            record.status,
             add_time,
             update_time,
         )
