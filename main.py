@@ -11,11 +11,16 @@ from kalshi_client import (
 	KalshiAPIClient,
 	KalshiAPIError,
 )
+from http_request_demo import fetch_tags_by_categories
 from logging_setup import configure_logging
+from models.category_record import CategoryRecord
+from models.tag_record import TagRecord
 from repositories.base_repository import DatabaseSaveError
 from repositories.event_repository import EventRepository
 from repositories.market_repository import MarketRepository
+from repositories.category_repository import CategoryRepository
 from repositories.series_repository import SeriesRepository
+from repositories.tag_repository import TagRepository
 from services.events_service import EventsService
 from services.markets_service import MarketsService
 from services.series_service import SeriesService
@@ -31,11 +36,31 @@ def main() -> None:
 	series_repository = SeriesRepository(settings, logger=logger)
 	event_repository = EventRepository(settings, logger=logger)
 	market_repository = MarketRepository(settings, logger=logger)
+	category_repository = CategoryRepository(settings, logger=logger)
+	tag_repository = TagRepository(settings, logger=logger)
 	# response1 = client.call(
     #         "get_settlements_without_preload_content", authenticated=True)
 	# response=client.sdk_client.get_settlements()
 
 	if client.auth_enabled:
+		try:
+			tags_by_categories = fetch_tags_by_categories(settings=settings, logger=logger)
+			category_records = [CategoryRecord(name=category) for category in tags_by_categories.keys()]
+			tag_records: list[TagRecord] = []
+			for category_name, tag_list in tags_by_categories.items():
+				if not tag_list:
+					continue
+				tag_records.extend(TagRecord(category=category_name, tag=tag) for tag in tag_list)
+			if category_records:
+				cat_upserted = category_repository.save_categories(category_records)
+				logger.info("Persisted %s category rows to SQL Server", cat_upserted)
+			if tag_records:
+				tag_upserted = tag_repository.save_tags(tag_records)
+				logger.info("Persisted %s tag rows to SQL Server", tag_upserted)
+		except (KalshiAPIError, AuthenticationConfigError) as api_error:
+			logger.error("Tags-by-categories request failed: %s", api_error)
+		except DatabaseSaveError as db_error:
+			logger.error("Failed to persist tag data: %s", db_error)
 		try:
 			records = series_service.list_series_records()
 			logger.info("Received %s series rows", len(records))
@@ -50,6 +75,7 @@ def main() -> None:
 			logger.error("Series request failed: %s", api_error)
 		except DatabaseSaveError as db_error:
 			logger.error("Failed to persist series data: %s", db_error)
+
 		try:
 			cursor = None
 			total_rows = 0
