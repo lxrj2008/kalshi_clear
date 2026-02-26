@@ -134,6 +134,74 @@ def fetch_tags_by_categories(
     return normalized
 
 
+def fetch_filters_by_sport(
+    *, settings: KalshiSettings | None = None, logger=None
+) -> dict[str, dict[str, object]]:
+    """Fetch the /search/filters_by_sport payload and normalize it."""
+
+    options = HttpRequestOptions(path="/search/filters_by_sport", public=False)
+    response = execute_http_request(options, settings=settings, logger=logger)
+
+    try:
+        payload = response.json()
+    except ValueError:
+        if logger:
+            logger.error(
+                "Unable to parse filters_by_sport JSON; status=%s", response.status_code
+            )
+        return {}
+
+    if not isinstance(payload, Mapping):
+        if logger:
+            logger.error("Unexpected filters_by_sport payload type: %s", type(payload))
+        return {}
+
+    filters = payload.get("filters_by_sports")
+    if not isinstance(filters, Mapping):
+        return {}
+
+    normalized: dict[str, dict[str, object]] = {}
+    for sport_key, sport_payload in filters.items():
+        if sport_key is None:
+            continue
+        sport_name = str(sport_key).strip()
+        if not sport_name:
+            continue
+        scopes: list[str] = []
+        competitions: dict[str, list[str]] = {}
+
+        if isinstance(sport_payload, Mapping):
+            raw_scopes = sport_payload.get("scopes")
+            if isinstance(raw_scopes, list):
+                scopes = [str(scope).strip() for scope in raw_scopes if str(scope).strip()]
+
+            raw_competitions = sport_payload.get("competitions")
+            if isinstance(raw_competitions, Mapping):
+                for comp_key, comp_payload in raw_competitions.items():
+                    if comp_key is None:
+                        continue
+                    comp_name = str(comp_key).strip()
+                    if not comp_name:
+                        continue
+                    comp_scopes: list[str] = []
+                    if isinstance(comp_payload, Mapping):
+                        comp_raw_scopes = comp_payload.get("scopes")
+                        if isinstance(comp_raw_scopes, list):
+                            comp_scopes = [
+                                str(scope).strip()
+                                for scope in comp_raw_scopes
+                                if str(scope).strip()
+                            ]
+                    competitions[comp_name] = comp_scopes
+
+        normalized[sport_name] = {
+            "scopes": scopes,
+            "competitions": competitions,
+        }
+
+    return normalized
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Invoke Kalshi HTTP endpoints directly")
     parser.add_argument("--method", default="GET", help="HTTP method to use (default: GET)")

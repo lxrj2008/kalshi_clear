@@ -11,15 +11,25 @@ from kalshi_client import (
 	KalshiAPIClient,
 	KalshiAPIError,
 )
-from http_request_demo import fetch_tags_by_categories
+from http_request_demo import fetch_filters_by_sport, fetch_tags_by_categories
 from logging_setup import configure_logging
 from models.category_record import CategoryRecord
+from models.competition_record import CompetitionRecord
+from models.competition_scope_record import CompetitionScopeRecord
+from models.scope_record import ScopeRecord
+from models.sport_record import SportRecord
+from models.sport_scope_record import SportScopeRecord
 from models.tag_record import TagRecord
 from repositories.base_repository import DatabaseSaveError
+from repositories.competition_repository import CompetitionRepository
+from repositories.competition_scope_repository import CompetitionScopeRepository
 from repositories.event_repository import EventRepository
 from repositories.market_repository import MarketRepository
 from repositories.category_repository import CategoryRepository
+from repositories.scope_repository import ScopeRepository
 from repositories.series_repository import SeriesRepository
+from repositories.sport_repository import SportRepository
+from repositories.sport_scope_repository import SportScopeRepository
 from repositories.tag_repository import TagRepository
 from services.events_service import EventsService
 from services.markets_service import MarketsService
@@ -38,6 +48,11 @@ def main() -> None:
 	market_repository = MarketRepository(settings, logger=logger)
 	category_repository = CategoryRepository(settings, logger=logger)
 	tag_repository = TagRepository(settings, logger=logger)
+	sport_repository = SportRepository(settings, logger=logger)
+	competition_repository = CompetitionRepository(settings, logger=logger)
+	scope_repository = ScopeRepository(settings, logger=logger)
+	sport_scope_repository = SportScopeRepository(settings, logger=logger)
+	competition_scope_repository = CompetitionScopeRepository(settings, logger=logger)
 	# response1 = client.call(
     #         "get_settlements_without_preload_content", authenticated=True)
 	# response=client.sdk_client.get_settlements()
@@ -61,6 +76,109 @@ def main() -> None:
 			logger.error("Tags-by-categories request failed: %s", api_error)
 		except DatabaseSaveError as db_error:
 			logger.error("Failed to persist tag data: %s", db_error)
+
+		try:
+			filters_by_sport = fetch_filters_by_sport(settings=settings, logger=logger)
+			sport_records: list[SportRecord] = []
+			competition_records: list[CompetitionRecord] = []
+			scope_records: list[ScopeRecord] = []
+			sport_scope_records: list[SportScopeRecord] = []
+			competition_scope_records: list[CompetitionScopeRecord] = []
+
+			sport_seen: set[str] = set()
+			competition_seen: set[str] = set()
+			scope_seen: set[str] = set()
+			sport_scope_seen: set[tuple[str, str]] = set()
+			competition_scope_seen: set[tuple[str, str]] = set()
+
+			for sport_name, sport_payload in filters_by_sport.items():
+				if sport_name not in sport_seen:
+					sport_seen.add(sport_name)
+					sport_records.append(SportRecord(name=sport_name))
+
+				sport_scopes = sport_payload.get("scopes") if isinstance(sport_payload, dict) else []
+				if isinstance(sport_scopes, list):
+					for scope in sport_scopes:
+						scope_name = str(scope).strip()
+						if not scope_name:
+							continue
+						if scope_name not in scope_seen:
+							scope_seen.add(scope_name)
+							scope_records.append(ScopeRecord(name=scope_name))
+						pair = (sport_name, scope_name)
+						if pair not in sport_scope_seen:
+							sport_scope_seen.add(pair)
+							sport_scope_records.append(
+								SportScopeRecord(sport_name=sport_name, scope_name=scope_name)
+							)
+
+				competitions = sport_payload.get("competitions") if isinstance(sport_payload, dict) else {}
+				if isinstance(competitions, dict):
+					for competition_name, comp_payload in competitions.items():
+						comp_name = str(competition_name).strip()
+						if not comp_name:
+							continue
+						if comp_name not in competition_seen:
+							competition_seen.add(comp_name)
+							competition_records.append(
+								CompetitionRecord(name=comp_name, sport_name=sport_name)
+							)
+						comp_scopes = comp_payload
+						if isinstance(comp_scopes, list):
+							for scope in comp_scopes:
+								scope_name = str(scope).strip()
+								if not scope_name:
+									continue
+								if scope_name not in scope_seen:
+									scope_seen.add(scope_name)
+									scope_records.append(ScopeRecord(name=scope_name))
+							pair = (comp_name, scope_name)
+							if pair not in competition_scope_seen:
+								competition_scope_seen.add(pair)
+								competition_scope_records.append(
+									CompetitionScopeRecord(
+										competition_name=comp_name,
+										scope_name=scope_name,
+									)
+								)
+						else:
+							logger.debug(
+								"Competition %s under sport %s has no scopes list", comp_name, sport_name
+							)			
+
+			logger.info(
+				"filters_by_sport parsed counts: sports=%s, competitions=%s, scopes=%s, sport_scopes=%s, competition_scopes=%s",
+				len(sport_records),
+				len(competition_records),
+				len(scope_records),
+				len(sport_scope_records),
+				len(competition_scope_records),
+			)
+
+			if sport_records:
+				sport_upserted = sport_repository.save_sports(sport_records)
+				logger.info("Persisted %s sport rows to SQL Server", sport_upserted)
+			if scope_records:
+				scope_upserted = scope_repository.save_scopes(scope_records)
+				logger.info("Persisted %s scope rows to SQL Server", scope_upserted)
+			if competition_records:
+				competition_upserted = competition_repository.save_competitions(competition_records)
+				logger.info("Persisted %s competition rows to SQL Server", competition_upserted)
+			if sport_scope_records:
+				sport_scope_upserted = sport_scope_repository.save_sport_scopes(sport_scope_records)
+				logger.info("Persisted %s sport-scope rows to SQL Server", sport_scope_upserted)
+			if competition_scope_records:
+				competition_scope_upserted = competition_scope_repository.save_competition_scopes(
+					competition_scope_records
+				)
+				logger.info(
+					"Persisted %s competition-scope rows to SQL Server",
+					competition_scope_upserted,
+				)
+		except (KalshiAPIError, AuthenticationConfigError) as api_error:
+			logger.error("Filters-by-sport request failed: %s", api_error)
+		except DatabaseSaveError as db_error:
+			logger.error("Failed to persist filters-by-sport data: %s", db_error)
 		try:
 			records = series_service.list_series_records()
 			logger.info("Received %s series rows", len(records))
