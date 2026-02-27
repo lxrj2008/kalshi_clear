@@ -157,7 +157,7 @@ class KalshiAPIClient:
         json: Any = None,
         data: Any = None,
         headers: Optional[dict[str, str]] = None,
-        timeout: float = 30.0,
+        timeout: float = 10.0,
     ) -> requests.Response:
         """Perform a raw HTTP request with Kalshi authentication headers."""
         prepared_url = self._prepare_url(url)

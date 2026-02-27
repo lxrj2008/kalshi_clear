@@ -195,10 +195,20 @@ def main() -> None:
 			total_rows = 0
 			page = 1
 			while True:
-				event_records, milestones, cursor = events_service.list_event_records(
-					limit=200,
-					cursor=cursor
-				)
+				try:
+					event_records, milestones, cursor = events_service.list_event_records(
+						limit=200,
+						cursor=cursor
+					)
+				except KalshiAPIError as api_error:
+					logger.warning(
+						"Events request failed on page %s (cursor=%s): %s; retrying next page",
+						page,
+						cursor,
+						api_error,
+					)
+					sleep(1)
+					continue
 				logger.info(
 					"Fetched %s events on page %s (next cursor=%s)",
 					len(event_records),
@@ -235,10 +245,20 @@ def main() -> None:
 			market_total_rows = 0
 			market_page = 1
 			while True:
-				market_records, market_cursor = markets_service.list_market_records(
-					limit=1000,
-					cursor=market_cursor,
-				)
+				try:
+					market_records, market_cursor = markets_service.list_market_records(
+						limit=1000,
+						cursor=market_cursor,
+					)
+				except KalshiAPIError as api_error:
+					logger.warning(
+						"Markets request failed on page %s (cursor=%s): %s; retrying next page",
+						market_page,
+						market_cursor,
+						api_error,
+					)
+					sleep(1)
+					continue
 				logger.info(
 					"Fetched %s markets on page %s (next cursor=%s)",
 					len(market_records),
