@@ -30,17 +30,24 @@ class SeriesRepository(BaseSQLRepository):
     def insert_statement(self) -> str:  # type: ignore[override]
         return (
             f"MERGE {self.table_name} AS target "
-            "USING (VALUES (?, ?, ?, ?, ?, ?)) AS source "
-            "(ticker, title, category, status, add_time, update_time) "
+            "USING (VALUES (" + ", ".join(["?"] * 13) + ")) AS source "
+            "(ticker, category, contract_terms_url, contract_url, fee_multiplier, fee_type, frequency, last_updated_ts, title, volume, volume_fp, add_time, update_time) "
             "ON target.ticker = source.ticker "
             "WHEN MATCHED THEN UPDATE SET "
-            "title = source.title, "
             "category = source.category, "
-            "status = source.status, "
+            "contract_terms_url = source.contract_terms_url, "
+            "contract_url = source.contract_url, "
+            "fee_multiplier = source.fee_multiplier, "
+            "fee_type = source.fee_type, "
+            "frequency = source.frequency, "
+            "last_updated_ts = source.last_updated_ts, "
+            "title = source.title, "
+            "volume = source.volume, "
+            "volume_fp = source.volume_fp, "
             "UpdateTime = source.update_time "
             "WHEN NOT MATCHED THEN INSERT "
-            "(ticker, title, category, status, AddTime, UpdateTime) "
-            "VALUES (source.ticker, source.title, source.category, source.status, source.add_time, source.update_time);"
+            "(ticker, category, contract_terms_url, contract_url, fee_multiplier, fee_type, frequency, last_updated_ts, title, volume, volume_fp, AddTime, UpdateTime) "
+            "VALUES (source.ticker, source.category, source.contract_terms_url, source.contract_url, source.fee_multiplier, source.fee_type, source.frequency, source.last_updated_ts, source.title, source.volume, source.volume_fp, source.add_time, source.update_time);"
         )
 
     def _build_row(self, record: SeriesRecord) -> tuple[object, ...]:
@@ -49,9 +56,16 @@ class SeriesRepository(BaseSQLRepository):
         update_time = record.update_time or current_time
         return (
             record.ticker,
-            record.title,
             record.category,
-            record.status,
+            record.contract_terms_url,
+            record.contract_url,
+            record.fee_multiplier,
+            record.fee_type,
+            record.frequency,
+            record.last_updated_ts,
+            record.title,
+            record.volume,
+            record.volume_fp,
             add_time,
             update_time,
         )

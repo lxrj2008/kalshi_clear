@@ -18,6 +18,10 @@ from kalshi_client import (
 from logging_setup import configure_logging
 
 
+# Reuse a single client across calls to benefit from connection pooling and auth setup.
+_SHARED_CLIENT: KalshiAPIClient | None = None
+
+
 @dataclass
 class HttpRequestOptions:
     """Parameters governing a single HTTP request."""
@@ -74,6 +78,7 @@ def execute_http_request(
     *,
     settings: KalshiSettings | None = None,
     logger=None,
+    client: KalshiAPIClient | None = None,
 ) -> Any:
     """Run a single HTTP request using the shared Kalshi client wrapper."""
     provided_settings = settings or KalshiSettings()
@@ -81,9 +86,13 @@ def execute_http_request(
         provided_settings.log_level,
         log_dir=provided_settings.log_directory,
     )
-    client = KalshiAPIClient(provided_settings, logger=active_logger)
+    global _SHARED_CLIENT
+    active_client = client or _SHARED_CLIENT
+    if active_client is None:
+        active_client = KalshiAPIClient(provided_settings, logger=active_logger)
+        _SHARED_CLIENT = active_client
     url = _resolve_url(provided_settings.host, options.path)
-    response = client.http_request(
+    response = active_client.http_request(
         options.method,
         url,
         authenticated=not options.public,
@@ -200,6 +209,60 @@ def fetch_filters_by_sport(
         }
 
     return normalized
+
+
+def fetch_markets(
+    *,
+    settings: KalshiSettings | None = None,
+    logger=None,
+    **params: Any,
+) -> dict[str, Any]:
+    """Fetch /markets with optional query params via the shared HTTP helper."""
+
+    options = HttpRequestOptions(path="/markets", public=False, params=params or None)
+    response = execute_http_request(options, settings=settings, logger=logger)
+    try:
+        return response.json()
+    except ValueError:
+        if logger:
+            logger.error("Unable to parse markets JSON; status=%s", response.status_code)
+        return {}
+
+
+def fetch_series(
+    *,
+    settings: KalshiSettings | None = None,
+    logger=None,
+    **params: Any,
+) -> dict[str, Any]:
+    """Fetch /series with arbitrary query params via shared HTTP helper."""
+
+    options = HttpRequestOptions(path="/series", public=False, params=params or None)
+    response = execute_http_request(options, settings=settings, logger=logger)
+    try:
+        return response.json()
+    except ValueError:
+        if logger:
+            logger.error("Unable to parse series JSON; status=%s", response.status_code)
+        return {}
+
+
+def fetch_events(
+    *,
+    settings: KalshiSettings | None = None,
+    logger=None,
+    **params: Any,
+) -> dict[str, Any]:
+    """Fetch /events with optional query params via shared HTTP helper."""
+
+    options = HttpRequestOptions(path="/events", public=False, params=params or None)
+    response = execute_http_request(options, settings=settings, logger=logger)
+    try:
+        return response.json()
+    except ValueError:
+        if logger:
+            logger.error("Unable to parse events JSON; status=%s", response.status_code)
+        return {}
 
 
 def main() -> None:

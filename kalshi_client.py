@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 import kalshi_python
 import requests
+from requests.adapters import HTTPAdapter
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -44,6 +45,12 @@ class KalshiAPIClient:
         self.logger = logger or logging.getLogger("kalshi")
         self._configuration = kalshi_python.Configuration(host=settings.host)
         self._auth_enabled = False
+        # Reuse a single session to benefit from HTTP connection pooling.
+        self._session = requests.Session()
+        # Increase pool sizes to reduce TCP/TLS handshakes on bursty workloads.
+        adapter = HTTPAdapter(pool_connections=16, pool_maxsize=64)
+        self._session.mount("http://", adapter)
+        self._session.mount("https://", adapter)
         private_key = self.settings.read_private_key()
         parsed_host = urlparse(settings.host)
         self._base_path = (parsed_host.path or "").rstrip("/")
@@ -162,18 +169,10 @@ class KalshiAPIClient:
                     "Authenticated call requested but API credentials are missing"
                 )
             request_headers.update(self._build_auth_headers(method_upper, prepared_url))
-        start = time.perf_counter()
         operation = f"{method_upper} {prepared_url}"
-        self.logger.debug(
-            "Kalshi HTTP request started",
-            extra={
-                "operation": operation,
-                "authenticated": authenticated,
-                "params": params,
-            },
-        )
+       
         try:
-            response = requests.request(
+            response = self._session.request(
                 method_upper,
                 prepared_url,
                 params=params,
@@ -184,20 +183,11 @@ class KalshiAPIClient:
             )
             response.raise_for_status()
         except RequestException as exc:
-            self._log_failure(operation, authenticated, start, exc)
             raise KalshiAPIError(
                 f"Kalshi HTTP error during '{operation}': {exc}"
             ) from exc
-        duration_ms = (time.perf_counter() - start) * 1000
         self.logger.info(
-            "Kalshi HTTP request completed",
-            extra={
-                "operation": operation,
-                "authenticated": authenticated,
-                "duration_ms": round(duration_ms, 2),
-                "status_code": response.status_code,
-            },
-        )
+            "Kalshi HTTP request completed")
         return response
 
     def _prepare_url(self, url: str) -> str:

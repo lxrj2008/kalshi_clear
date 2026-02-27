@@ -180,13 +180,9 @@ def main() -> None:
 		except DatabaseSaveError as db_error:
 			logger.error("Failed to persist filters-by-sport data: %s", db_error)
 		try:
-			records = series_service.list_series_records()
+			records = series_service.list_series_records(include_volume=True)
 			logger.info("Received %s series rows", len(records))
 			pprint([record.to_dict() for record in records[:5]])
-			logger.debug(
-				"Prepared SQL parameter sample",
-				extra={"params": records[0].to_sql_params() if records else None},
-			)
 			inserted = series_repository.save_series(records)
 			logger.info("Persisted %s series rows to SQL Server", inserted)
 		except KalshiAPIError as api_error:
@@ -201,8 +197,7 @@ def main() -> None:
 			while True:
 				event_records, milestones, cursor = events_service.list_event_records(
 					limit=200,
-					cursor=cursor,
-					with_nested_markets=False,
+					cursor=cursor
 				)
 				logger.info(
 					"Fetched %s events on page %s (next cursor=%s)",
@@ -215,9 +210,18 @@ def main() -> None:
 				if milestones:
 					logger.info("Received %s milestones on page %s", len(milestones), page)
 				if event_records:
-					upserted = event_repository.save_events(event_records)
-					logger.info("Persisted %s event rows to SQL Server", upserted)
-					total_rows += upserted
+					try:
+						upserted = event_repository.save_events(event_records)
+						logger.info("Persisted %s event rows to SQL Server", upserted)
+						total_rows += upserted
+					except DatabaseSaveError as db_error:
+						logger.error(
+							"Failed to persist event rows on page %s (cursor=%s): %s",
+							page,
+							cursor,
+							db_error,
+						)
+						# continue to next page even if this batch failed
 				page += 1
 				if not cursor:
 					break
@@ -244,13 +248,21 @@ def main() -> None:
 				if market_page == 1:
 					pprint([record.to_dict() for record in market_records[:5]])
 				if market_records:
-					upserted = market_repository.save_markets(market_records)
-					logger.info("Persisted %s market rows to SQL Server", upserted)
-					market_total_rows += upserted
+					try:
+						upserted = market_repository.save_markets(market_records)
+						logger.info("Persisted %s market rows to SQL Server", upserted)
+						market_total_rows += upserted
+					except DatabaseSaveError as db_error:
+						logger.error(
+							"Failed to persist market rows on page %s (cursor=%s): %s",
+							market_page,
+							market_cursor,
+							db_error,
+						)
+						# continue to next page even if this batch failed
 				if not market_cursor:
 					break
 				market_page += 1
-				sleep(0.01)
 			logger.info(
 				"Completed market sync; total rows persisted: %s",
 				market_total_rows,
