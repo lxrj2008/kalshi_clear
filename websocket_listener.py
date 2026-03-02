@@ -209,14 +209,9 @@ async def _handle_event_created(
     event_repo: EventRepository,
     logger: logging.Logger,
 ) -> None:
-    event_type = msg.get("event_type")
     event_ticker = msg.get("event_ticker")
     if not event_ticker:
-        logger.warning("event_lifecycle created event missing event_ticker")
-        return
-
-    if event_type != "created":
-        await _handle_event_update(msg, event_ticker, event_repo, logger)
+        logger.warning("event_lifecycle event missing event_ticker; skipping")
         return
 
     loop = asyncio.get_running_loop()
@@ -235,46 +230,6 @@ async def _handle_event_created(
         logger.info("Saved new event record for event_ticker=%s", event_ticker)
     except Exception as exc:  # pragma: no cover - DB errors
         logger.error("Failed to persist event %s: %s", event_ticker, exc)
-
-
-async def _handle_event_update(
-    msg: dict,
-    event_ticker: str,
-    event_repo: EventRepository,
-    logger: logging.Logger,
-) -> None:
-    title = msg.get("title")
-    subtitle = msg.get("subtitle")
-    collateral_return_type = msg.get("collateral_return_type")
-    series_ticker = msg.get("series_ticker")
-    strike_date_ts = msg.get("strike_date")
-    strike_period = msg.get("strike_period")
-
-    def _ts_to_dt(value):
-        if value is None:
-            return None
-        try:
-            return datetime.fromtimestamp(int(value))
-        except Exception:
-            return None
-
-    strike_date = _ts_to_dt(strike_date_ts)
-
-    try:
-        update_task = partial(
-            event_repo.update_event_fields,
-            event_ticker,
-            title=title,
-            sub_title=subtitle,
-            collateral_return_type=collateral_return_type,
-            series_ticker=series_ticker,
-            strike_date=strike_date,
-            strike_period=strike_period,
-        )
-        updated = await asyncio.get_running_loop().run_in_executor(None, update_task)
-        logger.info("Updated event record for event_ticker=%s rows=%s", event_ticker, updated)
-    except Exception as exc:  # pragma: no cover - DB errors
-        logger.error("Failed to update event %s: %s", event_ticker, exc)
 
 
 def main() -> None:
