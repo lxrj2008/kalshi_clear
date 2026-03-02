@@ -28,6 +28,49 @@ class EventRepository(BaseSQLRepository):
         self.logger.debug("Prepared %s parameter sets for event insert-if-absent", len(rows))
         return self._executemany(self.insert_statement, rows)
 
+    def update_event_fields(
+        self,
+        event_ticker: str,
+        *,
+        title: Optional[str] = None,
+        sub_title: Optional[str] = None,
+        collateral_return_type: Optional[str] = None,
+        series_ticker: Optional[str] = None,
+        strike_date: Optional[datetime] = None,
+        strike_period: Optional[str] = None,
+    ) -> int:
+        assignments: list[str] = []
+        params: list[object] = []
+        if title is not None:
+            assignments.append("title = ?")
+            params.append(title)
+        if sub_title is not None:
+            assignments.append("sub_title = ?")
+            params.append(sub_title)
+        if collateral_return_type is not None:
+            assignments.append("collateral_return_type = ?")
+            params.append(collateral_return_type)
+        if series_ticker is not None:
+            assignments.append("series_ticker = ?")
+            params.append(series_ticker)
+        if strike_date is not None:
+            assignments.append("strike_date = ?")
+            params.append(strike_date)
+        if strike_period is not None:
+            assignments.append("strike_period = ?")
+            params.append(strike_period)
+
+        if not assignments:
+            self.logger.debug("No event fields supplied for update; event_ticker=%s", event_ticker)
+            return 0
+
+        assignments.append("UpdateTime = ?")
+        params.append(datetime.now())
+        params.append(event_ticker)
+
+        statement = f"UPDATE {self.table_name} SET " + ", ".join(assignments) + " WHERE event_ticker = ?"
+        return self._execute_update(statement, params)
+
     @property
     def insert_statement(self) -> str:  # type: ignore[override]
         return (

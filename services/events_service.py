@@ -28,6 +28,14 @@ class EventsService:
         records = [EventRecord.from_api(event) for event in events]
         return records, milestones, cursor
 
+    def fetch_event_record(self, event_ticker: str) -> Optional[EventRecord]:
+        payload = self._fetch_raw_event(event_ticker)
+        event = payload.get("event") if isinstance(payload, dict) else None
+        if not event:
+            self._logger.warning("No event payload returned for event_ticker=%s", event_ticker)
+            return None
+        return EventRecord.from_api(event)
+
     def _build_params(self, **filters: Any) -> dict[str, Any]:
         params: dict[str, Any] = {}
         if (limit := filters.get("limit")) is not None:
@@ -64,6 +72,15 @@ class EventsService:
             return payload
         self._logger.error("Unexpected event payload type: %s", type(payload))
         return {}
+
+    def _fetch_raw_event(self, event_ticker: str) -> dict[str, Any]:
+        url = f"/events/{event_ticker}"
+        try:
+            response = self._client.http_request("GET", url, authenticated=True)
+            return response.json()
+        except Exception as exc:  # pragma: no cover - network/IO
+            self._logger.error("Unable to fetch event %s: %s", event_ticker, exc)
+            return {}
 
 
 __all__ = ["EventsService", "EventRecord"]

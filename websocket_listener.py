@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime
+from functools import partial
 from urllib.parse import urlparse, urlunparse
 
 from websockets.asyncio.client import connect
@@ -12,6 +14,10 @@ from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
 from config import KalshiSettings
 from kalshi_client import AuthenticationConfigError, KalshiAPIClient
 from logging_setup import configure_logging
+from repositories.event_repository import EventRepository
+from repositories.market_repository import MarketRepository
+from services.events_service import EventsService
+from services.markets_service import MarketsService
 
 
 def _build_ws_url(settings: KalshiSettings) -> str:
@@ -37,6 +43,11 @@ async def listen_ws(settings: KalshiSettings | None = None, logger: logging.Logg
     if not client.auth_enabled:
         raise AuthenticationConfigError("WebSocket requires configured API credentials")
 
+    markets_service = MarketsService(client, logger=logger)
+    market_repo = MarketRepository(settings, logger=logger)
+    events_service = EventsService(client, logger=logger)
+    event_repo = EventRepository(settings, logger=logger)
+
     ws_url = _build_ws_url(settings)
     headers = client.build_auth_headers("GET", ws_url)
     logger.info("Connecting to Kalshi websocket: %s", ws_url)
@@ -46,22 +57,20 @@ async def listen_ws(settings: KalshiSettings | None = None, logger: logging.Logg
         logger.info("WebSocket connected and subscribed to market_lifecycle_v2; awaiting messages...")
         async for message in ws:
             logger.info("WebSocket message: %s", message)
-
-    try:
-        try:
-            async with connect(
-                ws_url,
-                extra_headers=list(headers.items()),
-                ping_interval=20,
-                ping_timeout=20,
-                max_size=None,
-            ) as websocket:
-                await _consume(websocket)
-        except TypeError as exc:
-            logger.warning(
-                "websockets.connect rejected extra_headers (%s); retrying with additional_headers",
-                exc,
+            await _handle_message(
+                message,
+                markets_service,
+                market_repo,
+                events_service,
+                event_repo,
+                logger,
             )
+
+    backoff_seconds = 5
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
             async with connect(
                 ws_url,
                 additional_headers=list(headers.items()),
@@ -69,12 +78,203 @@ async def listen_ws(settings: KalshiSettings | None = None, logger: logging.Logg
                 ping_timeout=20,
                 max_size=None,
             ) as websocket:
+                logger.info("WebSocket connected (attempt %s); subscribed and consuming", attempt)
                 await _consume(websocket)
-    except (ConnectionClosedOK, ConnectionClosedError) as exc:
-        logger.warning("WebSocket closed: %s", exc)
-    except Exception as exc:  # pragma: no cover - safeguard for demo usage
-        logger.error("WebSocket listener failed: %s", exc)
-        raise
+                attempt = 0
+                backoff_seconds = 5
+        except (ConnectionClosedOK, ConnectionClosedError) as exc:
+            logger.warning("WebSocket closed: %s; reconnecting in %ss", exc, backoff_seconds)
+        except Exception as exc:  # pragma: no cover - safeguard for demo usage
+            logger.error("WebSocket listener failed: %s; reconnecting in %ss", exc, backoff_seconds)
+
+        try:
+            await asyncio.sleep(backoff_seconds)
+        except asyncio.CancelledError:
+            break
+        backoff_seconds = min(backoff_seconds * 2, 60)
+
+
+async def _handle_message(
+    raw_message: str,
+    markets_service: MarketsService,
+    market_repo: MarketRepository,
+    events_service: EventsService,
+    event_repo: EventRepository,
+    logger: logging.Logger,
+) -> None:
+    try:
+        payload = json.loads(raw_message)
+    except json.JSONDecodeError:
+        logger.warning("Skipping non-JSON websocket message")
+        return
+
+    if not isinstance(payload, dict):
+        logger.debug("Ignoring unexpected payload type: %s", type(payload))
+        return
+
+    msg = payload.get("msg")
+    if not isinstance(msg, dict):
+        logger.debug("websocket payload missing msg body for type=%s", payload.get("type"))
+        return
+
+    payload_type = payload.get("type")
+    if payload_type == "market_lifecycle_v2":
+        await _handle_market_created(msg, markets_service, market_repo, logger)
+    elif payload_type == "event_lifecycle":
+        await _handle_event_created(msg, events_service, event_repo, logger)
+    else:
+        logger.debug("Ignoring websocket message type: %s", payload_type)
+
+
+async def _handle_market_created(
+    msg: dict,
+    markets_service: MarketsService,
+    market_repo: MarketRepository,
+    logger: logging.Logger,
+) -> None:
+    event_type = msg.get("event_type")
+    ticker = msg.get("market_ticker")
+    if not ticker:
+        logger.warning("market_lifecycle_v2 event missing market_ticker")
+        return
+
+    if event_type != "created":
+        await _handle_market_update(msg, ticker, market_repo, logger)
+        return
+
+
+    # created -> fetch full market and insert-if-absent
+
+    loop = asyncio.get_running_loop()
+    try:
+        record = await asyncio.to_thread(markets_service.fetch_market_record, ticker)
+    except Exception as exc:  # pragma: no cover - network/IO protection
+        logger.error("Failed to fetch market %s: %s", ticker, exc)
+        return
+
+    if record is None:
+        logger.warning("No market record returned for ticker=%s", ticker)
+        return
+
+    try:
+        await loop.run_in_executor(None, market_repo.save_markets, [record])
+        logger.info("Saved new market record for ticker=%s", ticker)
+    except Exception as exc:  # pragma: no cover - DB errors
+        logger.error("Failed to persist market %s: %s", ticker, exc)
+
+
+async def _handle_market_update(
+    msg: dict,
+    ticker: str,
+    market_repo: MarketRepository,
+    logger: logging.Logger,
+) -> None:
+    open_ts = msg.get("open_ts")
+    close_ts = msg.get("close_ts")
+    settlement_ts_raw = msg.get("settled_ts")
+    result = msg.get("result")
+    settlement_value = msg.get("settlement_value")
+
+    def _ts_to_dt(value):
+        if value is None:
+            return None
+        try:
+            return datetime.fromtimestamp(int(value))
+        except Exception:
+            return None
+
+    open_time = _ts_to_dt(open_ts)
+    close_time = _ts_to_dt(close_ts)
+    settlement_ts = _ts_to_dt(settlement_ts_raw)
+
+    try:
+        update_task = partial(
+            market_repo.update_market_fields,
+            ticker,
+            open_time=open_time,
+            close_time=close_time,
+            result=result,
+            settlement_value=settlement_value,
+            settlement_ts=settlement_ts,
+        )
+        updated = await asyncio.get_running_loop().run_in_executor(None, update_task)
+        logger.info("Updated market ticker=%s rows=%s", ticker, updated)
+    except Exception as exc:  # pragma: no cover - DB errors
+        logger.error("Failed to update market %s: %s", ticker, exc)
+
+
+async def _handle_event_created(
+    msg: dict,
+    events_service: EventsService,
+    event_repo: EventRepository,
+    logger: logging.Logger,
+) -> None:
+    event_type = msg.get("event_type")
+    event_ticker = msg.get("event_ticker")
+    if not event_ticker:
+        logger.warning("event_lifecycle created event missing event_ticker")
+        return
+
+    if event_type != "created":
+        await _handle_event_update(msg, event_ticker, event_repo, logger)
+        return
+
+    loop = asyncio.get_running_loop()
+    try:
+        record = await asyncio.to_thread(events_service.fetch_event_record, event_ticker)
+    except Exception as exc:  # pragma: no cover - network/IO protection
+        logger.error("Failed to fetch event %s: %s", event_ticker, exc)
+        return
+
+    if record is None:
+        logger.warning("No event record returned for event_ticker=%s", event_ticker)
+        return
+
+    try:
+        await loop.run_in_executor(None, event_repo.save_events, [record])
+        logger.info("Saved new event record for event_ticker=%s", event_ticker)
+    except Exception as exc:  # pragma: no cover - DB errors
+        logger.error("Failed to persist event %s: %s", event_ticker, exc)
+
+
+async def _handle_event_update(
+    msg: dict,
+    event_ticker: str,
+    event_repo: EventRepository,
+    logger: logging.Logger,
+) -> None:
+    title = msg.get("title")
+    subtitle = msg.get("subtitle")
+    collateral_return_type = msg.get("collateral_return_type")
+    series_ticker = msg.get("series_ticker")
+    strike_date_ts = msg.get("strike_date")
+    strike_period = msg.get("strike_period")
+
+    def _ts_to_dt(value):
+        if value is None:
+            return None
+        try:
+            return datetime.fromtimestamp(int(value))
+        except Exception:
+            return None
+
+    strike_date = _ts_to_dt(strike_date_ts)
+
+    try:
+        update_task = partial(
+            event_repo.update_event_fields,
+            event_ticker,
+            title=title,
+            sub_title=subtitle,
+            collateral_return_type=collateral_return_type,
+            series_ticker=series_ticker,
+            strike_date=strike_date,
+            strike_period=strike_period,
+        )
+        updated = await asyncio.get_running_loop().run_in_executor(None, update_task)
+        logger.info("Updated event record for event_ticker=%s rows=%s", event_ticker, updated)
+    except Exception as exc:  # pragma: no cover - DB errors
+        logger.error("Failed to update event %s: %s", event_ticker, exc)
 
 
 def main() -> None:

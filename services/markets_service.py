@@ -27,6 +27,14 @@ class MarketsService:
         records = [MarketRecord.from_api(market) for market in markets]
         return records, cursor
 
+    def fetch_market_record(self, ticker: str) -> Optional[MarketRecord]:
+        payload = self._fetch_raw_market(ticker)
+        market = payload.get("market") if isinstance(payload, dict) else None
+        if not market:
+            self._logger.warning("No market payload returned for ticker=%s", ticker)
+            return None
+        return MarketRecord.from_api(market)
+
     def _build_params(self, **filters: Any) -> dict[str, Any]:
         params: dict[str, Any] = {}
         if (limit := filters.get("limit")) is not None:
@@ -76,6 +84,15 @@ class MarketsService:
         # except json.JSONDecodeError:
         #     self._logger.error("Unable to decode market payload: %s", text[:200])
         #     return {}
+
+    def _fetch_raw_market(self, ticker: str) -> dict[str, Any]:
+        url = f"/markets/{ticker}"
+        try:
+            response = self._client.http_request("GET", url, authenticated=True)
+            return response.json()
+        except Exception as exc:  # pragma: no cover - network/IO
+            self._logger.error("Unable to fetch market %s: %s", ticker, exc)
+            return {}
 
 
 __all__ = ["MarketsService", "MarketRecord"]

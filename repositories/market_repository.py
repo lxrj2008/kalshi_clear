@@ -28,6 +28,45 @@ class MarketRepository(BaseSQLRepository):
         self.logger.debug("Prepared %s parameter sets for market insert-if-absent", len(rows))
         return self._executemany(self.insert_statement, rows)
 
+    def update_market_fields(
+        self,
+        ticker: str,
+        *,
+        open_time: Optional[datetime] = None,
+        close_time: Optional[datetime] = None,
+        result: Optional[str] = None,
+        settlement_value: Optional[float] = None,
+        settlement_ts: Optional[datetime] = None,
+    ) -> int:
+        assignments: list[str] = []
+        params: list[object] = []
+        if open_time is not None:
+            assignments.append("open_time = ?")
+            params.append(open_time)
+        if close_time is not None:
+            assignments.append("close_time = ?")
+            params.append(close_time)
+        if result is not None:
+            assignments.append("result = ?")
+            params.append(result)
+        if settlement_value is not None:
+            assignments.append("settlement_value = ?")
+            params.append(settlement_value)
+        if settlement_ts is not None:
+            assignments.append("settlement_ts = ?")
+            params.append(settlement_ts)
+
+        assignments.append("UpdateTime = ?")
+        params.append(datetime.now())
+
+        if not assignments:
+            self.logger.debug("No market fields supplied for update; ticker=%s", ticker)
+            return 0
+
+        params.append(ticker)
+        statement = f"UPDATE {self.table_name} SET " + ", ".join(assignments) + " WHERE ticker = ?"
+        return self._execute_update(statement, params)
+
     @property
     def insert_statement(self) -> str:  # type: ignore[override]
         return (
