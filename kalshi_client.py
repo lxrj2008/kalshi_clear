@@ -147,6 +147,10 @@ class KalshiAPIClient:
         """Expose the raw Kalshi SDK client for specialized scenarios."""
         return self._client
 
+    def build_auth_headers(self, method: str, url: str) -> dict[str, str]:
+        """Public helper to generate Kalshi auth headers for arbitrary requests (e.g., websockets)."""
+        return self._build_auth_headers(method, url)
+
     def http_request(
         self,
         method: str,

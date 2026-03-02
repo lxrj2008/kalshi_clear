@@ -1,8 +1,10 @@
 """Entry point demonstrating the reusable Kalshi API client framework."""
 from __future__ import annotations
 
+import asyncio
 import json
 from pprint import pprint
+from threading import Thread
 from time import sleep
 
 from config import KalshiSettings
@@ -34,12 +36,24 @@ from repositories.tag_repository import TagRepository
 from services.events_service import EventsService
 from services.markets_service import MarketsService
 from services.series_service import SeriesService
+from websocket_listener import listen_ws
 
 
 def main() -> None:
 	settings = KalshiSettings()
 	logger = configure_logging(settings.log_level, log_dir=settings.log_directory)
 	client = KalshiAPIClient(settings, logger=logger)
+
+	def _run_ws_listener() -> None:
+		try:
+			asyncio.run(listen_ws(settings=settings, logger=logger))
+		except Exception as exc:  # pragma: no cover - background safety
+			logger.error("WebSocket listener stopped: %s", exc)
+
+	ws_thread = Thread(target=_run_ws_listener, name="kalshi-ws-listener", daemon=True)
+	ws_thread.start()
+	logger.info("WebSocket listener thread started")
+
 	series_service = SeriesService(client)
 	events_service = EventsService(client, logger=logger)
 	markets_service = MarketsService(client, logger=logger)
