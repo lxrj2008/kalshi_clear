@@ -49,7 +49,6 @@ async def listen_ws(settings: KalshiSettings | None = None, logger: logging.Logg
     event_repo = EventRepository(settings, logger=logger)
 
     ws_url = _build_ws_url(settings)
-    headers = client.build_auth_headers("GET", ws_url)
     logger.info("Connecting to Kalshi websocket: %s", ws_url)
 
     async def _consume(ws):
@@ -71,6 +70,7 @@ async def listen_ws(settings: KalshiSettings | None = None, logger: logging.Logg
     while True:
         attempt += 1
         try:
+            headers = client.build_auth_headers("GET", ws_url)
             async with connect(
                 ws_url,
                 additional_headers=list(headers.items()),
@@ -84,6 +84,9 @@ async def listen_ws(settings: KalshiSettings | None = None, logger: logging.Logg
                 backoff_seconds = 5
         except (ConnectionClosedOK, ConnectionClosedError) as exc:
             logger.warning("WebSocket closed: %s; reconnecting in %ss", exc, backoff_seconds)
+        except AuthenticationConfigError as exc:
+            logger.error("WebSocket auth error: %s; cannot reconnect without valid credentials", exc)
+            break
         except Exception as exc:  # pragma: no cover - safeguard for demo usage
             logger.error("WebSocket listener failed: %s; reconnecting in %ss", exc, backoff_seconds)
 
