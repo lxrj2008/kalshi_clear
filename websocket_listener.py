@@ -142,7 +142,7 @@ async def _handle_market_created(
         return
 
     if event_type != "created":
-        await _handle_market_update(msg, ticker, market_repo, logger)
+        await _handle_market_update(msg, ticker, markets_service, market_repo, logger)
         return
 
 
@@ -169,6 +169,7 @@ async def _handle_market_created(
 async def _handle_market_update(
     msg: dict,
     ticker: str,
+    markets_service: MarketsService,
     market_repo: MarketRepository,
     logger: logging.Logger,
 ) -> None:
@@ -190,6 +191,7 @@ async def _handle_market_update(
     close_time = _ts_to_dt(close_ts)
     settlement_ts = _ts_to_dt(settlement_ts_raw)
 
+    loop = asyncio.get_running_loop()
     try:
         update_task = partial(
             market_repo.update_market_fields,
@@ -200,10 +202,28 @@ async def _handle_market_update(
             settlement_value=settlement_value,
             settlement_ts=settlement_ts,
         )
-        updated = await asyncio.get_running_loop().run_in_executor(None, update_task)
+        updated = await loop.run_in_executor(None, update_task)
         logger.info("Updated market ticker=%s rows=%s", ticker, updated)
     except Exception as exc:  # pragma: no cover - DB errors
         logger.error("Failed to update market %s: %s", ticker, exc)
+        return
+
+    if updated == 0:
+        try:
+            record = await asyncio.to_thread(markets_service.fetch_market_record, ticker)
+        except Exception as exc:  # pragma: no cover - network/IO protection
+            logger.error("Failed to refetch market %s after zero updates: %s", ticker, exc)
+            return
+
+        if record is None:
+            logger.warning("Refetch returned no market record for ticker=%s", ticker)
+            return
+
+        try:
+            await loop.run_in_executor(None, market_repo.save_markets, [record])
+            logger.info("Inserted market ticker=%s after zero-update fallback", ticker)
+        except Exception as exc:  # pragma: no cover - DB errors
+            logger.error("Failed to persist market %s after zero-update fallback: %s", ticker, exc)
 
 
 async def _handle_event_created(
