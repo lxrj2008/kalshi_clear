@@ -10,7 +10,7 @@ from repositories.base_repository import BaseSQLRepository
 
 
 class MarketRepository(BaseSQLRepository):
-    """Insert or update market snapshots in SQL Server."""
+    """Insert market snapshots when absent in SQL Server."""
 
     def __init__(
         self,
@@ -25,7 +25,7 @@ class MarketRepository(BaseSQLRepository):
         rows = [self._build_row(record) for record in records]
         if not rows:
             return 0
-        self.logger.debug("Prepared %s parameter sets for market upsert", len(rows))
+        self.logger.debug("Prepared %s parameter sets for market insert-if-absent", len(rows))
         return self._executemany(self.insert_statement, rows)
 
     @property
@@ -33,79 +33,11 @@ class MarketRepository(BaseSQLRepository):
         return (
             f"MERGE {self.table_name} AS target "
             "USING (VALUES (" + ", ".join(["?"] * 68) + ")) AS source "
-            "(ticker, event_ticker, series_ticker, market_type, title, subtitle, yes_sub_title, no_sub_title, created_time, updated_time, open_time, close_time, expiration_time, latest_expiration_time, settlement_timer_seconds, status, response_price_units, yes_bid, yes_bid_dollars, yes_bid_size_fp, yes_ask, yes_ask_dollars, yes_ask_size_fp, no_bid, no_bid_dollars, no_ask, no_ask_dollars, last_price, last_price_dollars, volume, volume_fp, volume_24h, volume_24h_fp, result, can_close_early, fractional_trading_enabled, open_interest, open_interest_fp, notional_value, notional_value_dollars, previous_yes_bid, previous_yes_bid_dollars, previous_yes_ask, previous_yes_ask_dollars, previous_price, previous_price_dollars, liquidity, liquidity_dollars, expiration_value, tick_size, rules_primary, rules_secondary, price_level_structure, expected_expiration_time, settlement_value, settlement_value_dollars, settlement_ts, fee_waiver_expiration_time, early_close_condition, strike_type, floor_strike, cap_strike, functional_strike, mve_collection_ticker, primary_participant_key, is_provisional, add_time, update_time) "
+            "(ticker, event_ticker, series_ticker, market_type, title, subtitle, yes_sub_title, no_sub_title, created_time, updated_time, open_time, close_time, expiration_time, latest_expiration_time, settlement_timer_seconds, status, response_price_units, yes_bid, yes_bid_dollars, yes_bid_size_fp, yes_ask, yes_ask_dollars, yes_ask_size_fp, no_bid, no_bid_dollars, no_ask, no_ask_dollars, last_price, last_price_dollars, volume, volume_fp, volume_24h, volume_24h_fp, result, can_close_early, fractional_trading_enabled, open_interest, open_interest_fp, notional_value, notional_value_dollars, previous_yes_bid, previous_yes_bid_dollars, previous_yes_ask, previous_yes_ask_dollars, previous_price, previous_price_dollars, liquidity, liquidity_dollars, expiration_value, tick_size, rules_primary, rules_secondary, price_level_structure, expected_expiration_time, settlement_value, settlement_value_dollars, settlement_ts, fee_waiver_expiration_time, early_close_condition, strike_type, floor_strike, cap_strike, functional_strike, mve_collection_ticker, primary_participant_key, is_provisional, AddTime, UpdateTime) "
             "ON target.ticker = source.ticker "
-            "WHEN MATCHED THEN UPDATE SET "
-            "event_ticker = source.event_ticker, "
-            "series_ticker = source.series_ticker, "
-            "market_type = source.market_type, "
-            "title = source.title, "
-            "subtitle = source.subtitle, "
-            "yes_sub_title = source.yes_sub_title, "
-            "no_sub_title = source.no_sub_title, "
-            "created_time = source.created_time, "
-            "updated_time = source.updated_time, "
-            "open_time = source.open_time, "
-            "close_time = source.close_time, "
-            "expiration_time = source.expiration_time, "
-            "latest_expiration_time = source.latest_expiration_time, "
-            "settlement_timer_seconds = source.settlement_timer_seconds, "
-            "status = source.status, "
-            "response_price_units = source.response_price_units, "
-            "yes_bid = source.yes_bid, "
-            "yes_bid_dollars = source.yes_bid_dollars, "
-            "yes_bid_size_fp = source.yes_bid_size_fp, "
-            "yes_ask = source.yes_ask, "
-            "yes_ask_dollars = source.yes_ask_dollars, "
-            "yes_ask_size_fp = source.yes_ask_size_fp, "
-            "no_bid = source.no_bid, "
-            "no_bid_dollars = source.no_bid_dollars, "
-            "no_ask = source.no_ask, "
-            "no_ask_dollars = source.no_ask_dollars, "
-            "last_price = source.last_price, "
-            "last_price_dollars = source.last_price_dollars, "
-            "volume = source.volume, "
-            "volume_fp = source.volume_fp, "
-            "volume_24h = source.volume_24h, "
-            "volume_24h_fp = source.volume_24h_fp, "
-            "result = source.result, "
-            "can_close_early = source.can_close_early, "
-            "fractional_trading_enabled = source.fractional_trading_enabled, "
-            "open_interest = source.open_interest, "
-            "open_interest_fp = source.open_interest_fp, "
-            "notional_value = source.notional_value, "
-            "notional_value_dollars = source.notional_value_dollars, "
-            "previous_yes_bid = source.previous_yes_bid, "
-            "previous_yes_bid_dollars = source.previous_yes_bid_dollars, "
-            "previous_yes_ask = source.previous_yes_ask, "
-            "previous_yes_ask_dollars = source.previous_yes_ask_dollars, "
-            "previous_price = source.previous_price, "
-            "previous_price_dollars = source.previous_price_dollars, "
-            "liquidity = source.liquidity, "
-            "liquidity_dollars = source.liquidity_dollars, "
-            "expiration_value = source.expiration_value, "
-            "tick_size = source.tick_size, "
-            "rules_primary = source.rules_primary, "
-            "rules_secondary = source.rules_secondary, "
-            "price_level_structure = source.price_level_structure, "
-            "expected_expiration_time = source.expected_expiration_time, "
-            "settlement_value = source.settlement_value, "
-            "settlement_value_dollars = source.settlement_value_dollars, "
-            "settlement_ts = source.settlement_ts, "
-            "fee_waiver_expiration_time = source.fee_waiver_expiration_time, "
-            "early_close_condition = source.early_close_condition, "
-            "strike_type = source.strike_type, "
-            "floor_strike = source.floor_strike, "
-            "cap_strike = source.cap_strike, "
-            "functional_strike = source.functional_strike, "
-            "mve_collection_ticker = source.mve_collection_ticker, "
-            "primary_participant_key = source.primary_participant_key, "
-            "is_provisional = source.is_provisional "
-            ", AddTime = source.add_time, "
-            "UpdateTime = source.update_time "
             "WHEN NOT MATCHED THEN INSERT "
             "(ticker, event_ticker, series_ticker, market_type, title, subtitle, yes_sub_title, no_sub_title, created_time, updated_time, open_time, close_time, expiration_time, latest_expiration_time, settlement_timer_seconds, status, response_price_units, yes_bid, yes_bid_dollars, yes_bid_size_fp, yes_ask, yes_ask_dollars, yes_ask_size_fp, no_bid, no_bid_dollars, no_ask, no_ask_dollars, last_price, last_price_dollars, volume, volume_fp, volume_24h, volume_24h_fp, result, can_close_early, fractional_trading_enabled, open_interest, open_interest_fp, notional_value, notional_value_dollars, previous_yes_bid, previous_yes_bid_dollars, previous_yes_ask, previous_yes_ask_dollars, previous_price, previous_price_dollars, liquidity, liquidity_dollars, expiration_value, tick_size, rules_primary, rules_secondary, price_level_structure, expected_expiration_time, settlement_value, settlement_value_dollars, settlement_ts, fee_waiver_expiration_time, early_close_condition, strike_type, floor_strike, cap_strike, functional_strike, mve_collection_ticker, primary_participant_key, is_provisional, AddTime, UpdateTime) "
-            "VALUES (source.ticker, source.event_ticker, source.series_ticker, source.market_type, source.title, source.subtitle, source.yes_sub_title, source.no_sub_title, source.created_time, source.updated_time, source.open_time, source.close_time, source.expiration_time, source.latest_expiration_time, source.settlement_timer_seconds, source.status, source.response_price_units, source.yes_bid, source.yes_bid_dollars, source.yes_bid_size_fp, source.yes_ask, source.yes_ask_dollars, source.yes_ask_size_fp, source.no_bid, source.no_bid_dollars, source.no_ask, source.no_ask_dollars, source.last_price, source.last_price_dollars, source.volume, source.volume_fp, source.volume_24h, source.volume_24h_fp, source.result, source.can_close_early, source.fractional_trading_enabled, source.open_interest, source.open_interest_fp, source.notional_value, source.notional_value_dollars, source.previous_yes_bid, source.previous_yes_bid_dollars, source.previous_yes_ask, source.previous_yes_ask_dollars, source.previous_price, source.previous_price_dollars, source.liquidity, source.liquidity_dollars, source.expiration_value, source.tick_size, source.rules_primary, source.rules_secondary, source.price_level_structure, source.expected_expiration_time, source.settlement_value, source.settlement_value_dollars, source.settlement_ts, source.fee_waiver_expiration_time, source.early_close_condition, source.strike_type, source.floor_strike, source.cap_strike, source.functional_strike, source.mve_collection_ticker, source.primary_participant_key, source.is_provisional, source.add_time, source.update_time);"
+            "VALUES (source.ticker, source.event_ticker, source.series_ticker, source.market_type, source.title, source.subtitle, source.yes_sub_title, source.no_sub_title, source.created_time, source.updated_time, source.open_time, source.close_time, source.expiration_time, source.latest_expiration_time, source.settlement_timer_seconds, source.status, source.response_price_units, source.yes_bid, source.yes_bid_dollars, source.yes_bid_size_fp, source.yes_ask, source.yes_ask_dollars, source.yes_ask_size_fp, source.no_bid, source.no_bid_dollars, source.no_ask, source.no_ask_dollars, source.last_price, source.last_price_dollars, source.volume, source.volume_fp, source.volume_24h, source.volume_24h_fp, source.result, source.can_close_early, source.fractional_trading_enabled, source.open_interest, source.open_interest_fp, source.notional_value, source.notional_value_dollars, source.previous_yes_bid, source.previous_yes_bid_dollars, source.previous_yes_ask, source.previous_yes_ask_dollars, source.previous_price, source.previous_price_dollars, source.liquidity, source.liquidity_dollars, source.expiration_value, source.tick_size, source.rules_primary, source.rules_secondary, source.price_level_structure, source.expected_expiration_time, source.settlement_value, source.settlement_value_dollars, source.settlement_ts, source.fee_waiver_expiration_time, source.early_close_condition, source.strike_type, source.floor_strike, source.cap_strike, source.functional_strike, source.mve_collection_ticker, source.primary_participant_key, source.is_provisional, source.AddTime, source.UpdateTime);"
         )
 
     def _build_row(self, record: MarketRecord) -> tuple[object, ...]:
