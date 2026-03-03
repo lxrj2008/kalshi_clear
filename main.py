@@ -7,6 +7,9 @@ from pprint import pprint
 from threading import Thread
 from time import sleep
 
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+
 from config import KalshiSettings
 from kalshi_client import (
 	AuthenticationConfigError,
@@ -71,7 +74,7 @@ def main() -> None:
     #         "get_settlements_without_preload_content", authenticated=True)
 	# response=client.sdk_client.get_settlements()
 
-	if client.auth_enabled:
+	def run_tags_and_filters_job() -> None:
 		try:
 			tags_by_categories = fetch_tags_by_categories(settings=settings, logger=logger)
 			category_records = [CategoryRecord(name=category) for category in tags_by_categories.keys()]
@@ -158,7 +161,7 @@ def main() -> None:
 						else:
 							logger.debug(
 								"Competition %s under sport %s has no scopes list", comp_name, sport_name
-							)			
+							)
 
 			logger.info(
 				"filters_by_sport parsed counts: sports=%s, competitions=%s, scopes=%s, sport_scopes=%s, competition_scopes=%s",
@@ -193,6 +196,8 @@ def main() -> None:
 			logger.error("Filters-by-sport request failed: %s", api_error)
 		except DatabaseSaveError as db_error:
 			logger.error("Failed to persist filters-by-sport data: %s", db_error)
+
+	def run_series_job() -> None:
 		try:
 			records = series_service.list_series_records(include_volume=True)
 			logger.info("Received %s series rows", len(records))
@@ -204,6 +209,7 @@ def main() -> None:
 		except DatabaseSaveError as db_error:
 			logger.error("Failed to persist series data: %s", db_error)
 
+	def run_events_job() -> None:
 		try:
 			cursor = None
 			total_rows = 0
@@ -212,7 +218,7 @@ def main() -> None:
 				try:
 					event_records, milestones, cursor = events_service.list_event_records(
 						limit=200,
-						cursor=cursor
+						cursor=cursor,
 					)
 				except KalshiAPIError as api_error:
 					logger.warning(
@@ -254,6 +260,8 @@ def main() -> None:
 			logger.error("Events request failed: %s", api_error)
 		except DatabaseSaveError as db_error:
 			logger.error("Failed to persist event data: %s", db_error)
+
+	def run_markets_job() -> None:
 		try:
 			market_cursor = None
 			market_total_rows = 0
@@ -305,6 +313,44 @@ def main() -> None:
 			logger.error("Markets request failed: %s", api_error)
 		except DatabaseSaveError as db_error:
 			logger.error("Failed to persist market data: %s", db_error)
+
+	scheduler: BackgroundScheduler | None = None
+
+	if client.auth_enabled:
+		run_tags_and_filters_job()
+		run_series_job()
+		run_events_job()
+		run_markets_job()
+
+		scheduler = BackgroundScheduler(job_defaults={"max_instances": 1, "coalesce": True})
+		scheduler.add_job(
+			run_tags_and_filters_job,
+			CronTrigger(hour=1, minute=0),
+			id="tags_filters_job",
+			replace_existing=True,
+		)
+		scheduler.add_job(
+			run_series_job,
+			CronTrigger(minute=0),
+			id="series_job",
+			replace_existing=True,
+		)
+		scheduler.add_job(
+			run_events_job,
+			CronTrigger(minute=0),
+			id="events_job",
+			replace_existing=True,
+		)
+		scheduler.add_job(
+			run_markets_job,
+			CronTrigger(hour=2, minute=0),
+			id="markets_job",
+			replace_existing=True,
+		)
+		scheduler.start()
+		logger.info(
+			"Scheduler started: tags/filters daily 01:00; series hourly; events hourly; markets daily 02:00"
+		)
 	else:
 		logger.warning("Skipping authenticated example because credentials are missing.")
 
@@ -319,6 +365,14 @@ def main() -> None:
 		logger.error("Public endpoint call failed: %s", api_error)
 	except AuthenticationConfigError as auth_error:
 		logger.error("Unexpected auth requirement: %s", auth_error)
+
+	if scheduler:
+		try:
+			while True:
+				sleep(60)
+		except (KeyboardInterrupt, SystemExit):
+			logger.info("Shutting down scheduler...")
+			scheduler.shutdown(wait=False)
 
 
 if __name__ == "__main__":
