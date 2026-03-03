@@ -325,7 +325,7 @@ def main() -> None:
 		scheduler = BackgroundScheduler(job_defaults={"max_instances": 1, "coalesce": True})
 		scheduler.add_job(
 			run_tags_and_filters_job,
-			CronTrigger(hour=1, minute=0),
+			CronTrigger(minute=0),
 			id="tags_filters_job",
 			replace_existing=True,
 		)
@@ -343,28 +343,16 @@ def main() -> None:
 		)
 		scheduler.add_job(
 			run_markets_job,
-			CronTrigger(hour=2, minute=0),
+			CronTrigger(hour=8, minute=0),
 			id="markets_job",
 			replace_existing=True,
 		)
 		scheduler.start()
 		logger.info(
-			"Scheduler started: tags/filters daily 01:00; series hourly; events hourly; markets daily 02:00"
+			"Scheduler started: tags/filters hourly; series hourly; events hourly; markets daily 08:00"
 		)
 	else:
 		logger.warning("Skipping authenticated example because credentials are missing.")
-
-	try:
-		heartbeat = client.call("get_exchange_status", authenticated=False)
-		pprint(heartbeat)
-	except AttributeError:
-		logger.info(
-			"Operation 'get_exchange_status' is unavailable in this client version."
-		)
-	except KalshiAPIError as api_error:
-		logger.error("Public endpoint call failed: %s", api_error)
-	except AuthenticationConfigError as auth_error:
-		logger.error("Unexpected auth requirement: %s", auth_error)
 
 	if scheduler:
 		try:
