@@ -36,12 +36,14 @@ class BaseSQLRepository(ABC):
                 cursor = connection.cursor()
                 cursor.fast_executemany = True
                 cursor.executemany(statement, rows)
+                rowcount = cursor.rowcount
                 connection.commit()
         except pyodbc.Error as exc:  # pragma: no cover - depends on driver
             self.logger.error("Bulk insert failed: %s", exc)
             raise DatabaseSaveError("Unable to persist rows to SQL Server") from exc
-        self.logger.info("Inserted %s rows", len(rows))
-        return len(rows)
+        affected = rowcount if rowcount >= 0 else len(rows)
+        self.logger.info("Inserted %s rows", affected)
+        return affected
 
     def _execute_update(self, statement: str, params: Sequence[object]) -> int:
         try:
