@@ -176,6 +176,8 @@ async def _handle_market_update(
     open_ts = msg.get("open_ts")
     close_ts = msg.get("close_ts")
     settlement_ts_raw = msg.get("settled_ts")
+    determination_ts = msg.get("determination_ts")
+    status = msg.get("event_type")
     result = msg.get("result")
     settlement_value = msg.get("settlement_value")
 
@@ -190,6 +192,7 @@ async def _handle_market_update(
     open_time = _ts_to_dt(open_ts)
     close_time = _ts_to_dt(close_ts)
     settlement_ts = _ts_to_dt(settlement_ts_raw)
+    updated_time = _ts_to_dt(determination_ts)
 
     loop = asyncio.get_running_loop()
     try:
@@ -201,6 +204,8 @@ async def _handle_market_update(
             result=result,
             settlement_value=settlement_value,
             settlement_ts=settlement_ts,
+            updated_time=updated_time,
+            status=status,
         )
         updated = await loop.run_in_executor(None, update_task)
         logger.info("Updated market ticker=%s rows=%s", ticker, updated)

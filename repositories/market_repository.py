@@ -37,6 +37,8 @@ class MarketRepository(BaseSQLRepository):
         result: Optional[str] = None,
         settlement_value: Optional[float] = None,
         settlement_ts: Optional[datetime] = None,
+        updated_time: Optional[datetime] = None,
+        status: Optional[str] = None,
     ) -> int:
         assignments: list[str] = []
         params: list[object] = []
@@ -55,6 +57,12 @@ class MarketRepository(BaseSQLRepository):
         if settlement_ts is not None:
             assignments.append("settlement_ts = ?")
             params.append(settlement_ts)
+        if updated_time is not None:
+            assignments.append("updated_time = ?")
+            params.append(updated_time)
+        if status is not None:
+            assignments.append("status = ?")
+            params.append(status)
 
         assignments.append("UpdateTime = ?")
         params.append(datetime.now())
