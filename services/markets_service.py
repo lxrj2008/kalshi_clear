@@ -5,7 +5,6 @@ import json
 import logging
 from typing import Any, Optional, Tuple
 
-from http_request_demo import fetch_markets
 from kalshi_client import KalshiAPIClient
 from models.market_record import MarketRecord
 
@@ -66,24 +65,21 @@ class MarketsService:
         return params
 
     def _fetch_raw_markets(self, params: dict[str, Any]) -> dict[str, Any]:
-        payload = fetch_markets(settings=self._client.settings, logger=self._logger, **params)
-        if isinstance(payload, dict):
-            return payload
-        self._logger.error("Unexpected market payload type: %s", type(payload))
-        return {}
-        # response = self._client.call(
-        #     "get_markets_without_preload_content", authenticated=True, **params
-        # )
-        # raw = getattr(response, "data", None)
-        # if isinstance(raw, (bytes, bytearray)):
-        #     text = raw.decode("utf-8")
-        # else:
-        #     text = str(raw or "")
-        # try:
-        #     return json.loads(text)
-        # except json.JSONDecodeError:
-        #     self._logger.error("Unable to decode market payload: %s", text[:200])
-        #     return {}
+        try:
+            response = self._client.http_request(
+                "GET",
+                "/markets",
+                authenticated=True,
+                params=params,
+            )
+            payload = response.json()
+            if isinstance(payload, dict):
+                return payload
+            self._logger.error("Unexpected market payload type: %s", type(payload))
+            return {}
+        except Exception as exc:  # pragma: no cover - network/IO
+            self._logger.error("Unable to fetch markets: %s", exc)
+            return {}
 
     def _fetch_raw_market(self, ticker: str) -> dict[str, Any]:
         url = f"/markets/{ticker}"

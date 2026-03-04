@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from http_request_demo import fetch_series
 from kalshi_client import KalshiAPIClient, KalshiAPIError, AuthenticationConfigError
 from models.series_record import SeriesRecord
 
@@ -41,11 +40,21 @@ class SeriesService:
         return params
 
     def _fetch_raw_series(self, params: dict[str, Any]) -> dict[str, Any]:
-        payload = fetch_series(settings=self._client.settings, logger=self._logger, **params)
-        if isinstance(payload, dict):
-            return payload
-        self._logger.error("Unexpected series payload type: %s", type(payload))
-        return {}
+        try:
+            response = self._client.http_request(
+                "GET",
+                "/series",
+                authenticated=True,
+                params=params,
+            )
+            payload = response.json()
+            if isinstance(payload, dict):
+                return payload
+            self._logger.error("Unexpected series payload type: %s", type(payload))
+            return {}
+        except Exception as exc:  # pragma: no cover - network/IO
+            self._logger.error("Unable to fetch series: %s", exc)
+            return {}
 
 
 __all__ = [

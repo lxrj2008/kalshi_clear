@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pprint import pprint
 from threading import Thread
 from time import sleep
 
@@ -16,11 +15,12 @@ from kalshi_client import (
 	KalshiAPIClient,
 	KalshiAPIError,
 )
-from http_request_demo import fetch_filters_by_sport, fetch_tags_by_categories
 from logging_setup import configure_logging
 from models.category_record import CategoryRecord
 from models.competition_record import CompetitionRecord
 from models.competition_scope_record import CompetitionScopeRecord
+from models.event_record import EventRecord
+from models.market_record import MarketRecord
 from models.scope_record import ScopeRecord
 from models.sport_record import SportRecord
 from models.sport_scope_record import SportScopeRecord
@@ -39,6 +39,7 @@ from repositories.tag_repository import TagRepository
 from services.events_service import EventsService
 from services.markets_service import MarketsService
 from services.series_service import SeriesService
+from services.search_service import SearchService
 from websocket_listener import listen_ws
 
 
@@ -60,6 +61,7 @@ def main() -> None:
 	series_service = SeriesService(client)
 	events_service = EventsService(client, logger=logger)
 	markets_service = MarketsService(client, logger=logger)
+	search_service = SearchService(client, logger=logger)
 	series_repository = SeriesRepository(settings, logger=logger)
 	event_repository = EventRepository(settings, logger=logger)
 	market_repository = MarketRepository(settings, logger=logger)
@@ -76,7 +78,7 @@ def main() -> None:
 
 	def run_tags_and_filters_job() -> None:
 		try:
-			tags_by_categories = fetch_tags_by_categories(settings=settings, logger=logger)
+			tags_by_categories = search_service.fetch_tags_by_categories()
 			category_records = [CategoryRecord(name=category) for category in tags_by_categories.keys()]
 			tag_records: list[TagRecord] = []
 			for category_name, tag_list in tags_by_categories.items():
@@ -95,7 +97,7 @@ def main() -> None:
 			logger.error("Failed to persist tag data: %s", db_error)
 
 		try:
-			filters_by_sport = fetch_filters_by_sport(settings=settings, logger=logger)
+			filters_by_sport = search_service.fetch_filters_by_sport()
 			sport_records: list[SportRecord] = []
 			competition_records: list[CompetitionRecord] = []
 			scope_records: list[ScopeRecord] = []
@@ -201,7 +203,6 @@ def main() -> None:
 		try:
 			records = series_service.list_series_records(include_volume=True)
 			logger.info("Received %s series rows", len(records))
-			pprint([record.to_dict() for record in records[:5]])
 			inserted = series_repository.save_series(records)
 			logger.info("Persisted %s series rows to SQL Server", inserted)
 		except KalshiAPIError as api_error:
@@ -214,6 +215,9 @@ def main() -> None:
 			cursor = None
 			total_rows = 0
 			page = 1
+			buffer: list[EventRecord] = []
+			buffer_target = 10_000
+			event_repository.reset_staging()
 			while True:
 				try:
 					event_records, milestones, cursor = events_service.list_event_records(
@@ -221,13 +225,26 @@ def main() -> None:
 						cursor=cursor,
 					)
 				except KalshiAPIError as api_error:
+					if buffer:
+						try:
+							upserted = event_repository.save_events(buffer, manage_truncate=False)
+							logger.info(
+								"Persisted %s event rows before retry (buffer flush)", upserted
+							)
+							total_rows += upserted
+							buffer.clear()
+						except DatabaseSaveError as db_error:
+							logger.error(
+								"Failed to persist buffered event rows before retry (cursor=%s): %s",
+								cursor,
+								db_error,
+							)
 					logger.warning(
 						"Events request failed on page %s (cursor=%s): %s; retrying next page",
 						page,
 						cursor,
 						api_error,
 					)
-					sleep(1)
 					continue
 				logger.info(
 					"Fetched %s events on page %s (next cursor=%s)",
@@ -235,26 +252,35 @@ def main() -> None:
 					page,
 					cursor,
 				)
-				if page == 1:
-					pprint([record.to_dict() for record in event_records[:5]])
-				if milestones:
-					logger.info("Received %s milestones on page %s", len(milestones), page)
 				if event_records:
-					try:
-						upserted = event_repository.save_events(event_records)
-						logger.info("Persisted %s event rows to SQL Server", upserted)
-						total_rows += upserted
-					except DatabaseSaveError as db_error:
-						logger.error(
-							"Failed to persist event rows on page %s (cursor=%s): %s",
-							page,
-							cursor,
-							db_error,
-						)
-						# continue to next page even if this batch failed
+					buffer.extend(event_records)
+					if len(buffer) >= buffer_target:
+						try:
+							upserted = event_repository.save_events(buffer, manage_truncate=False)
+							logger.info(
+								"Persisted %s event rows to SQL Server (buffer flush)", upserted
+							)
+							total_rows += upserted
+							buffer.clear()
+						except DatabaseSaveError as db_error:
+							logger.error(
+								"Failed to persist event rows on page %s (cursor=%s): %s",
+								page,
+								cursor,
+								db_error,
+							)
 				page += 1
 				if not cursor:
 					break
+			# flush remaining
+			if buffer:
+				try:
+					upserted = event_repository.save_events(buffer, manage_truncate=False)
+					logger.info("Persisted %s remaining event rows to SQL Server", upserted)
+					total_rows += upserted
+				except DatabaseSaveError as db_error:
+					logger.error("Failed to persist remaining event rows: %s", db_error)
+			event_repository.reset_staging()
 			logger.info("Completed event sync; total rows persisted: %s", total_rows)
 		except KalshiAPIError as api_error:
 			logger.error("Events request failed: %s", api_error)
@@ -266,6 +292,9 @@ def main() -> None:
 			market_cursor = None
 			market_total_rows = 0
 			market_page = 1
+			buffer: list[MarketRecord] = []
+			buffer_target = 10_000
+			market_repository.reset_staging()
 			while True:
 				try:
 					market_records, market_cursor = markets_service.list_market_records(
@@ -273,13 +302,27 @@ def main() -> None:
 						cursor=market_cursor,
 					)
 				except KalshiAPIError as api_error:
+					if buffer:
+						try:
+							upserted = market_repository.save_markets(buffer, manage_truncate=False)
+							logger.info(
+								"Persisted %s market rows before retry (buffer flush)",
+								upserted,
+							)
+							market_total_rows += upserted
+							buffer.clear()
+						except DatabaseSaveError as db_error:
+							logger.error(
+								"Failed to persist buffered market rows before retry (cursor=%s): %s",
+								market_cursor,
+								db_error,
+							)
 					logger.warning(
 						"Markets request failed on page %s (cursor=%s): %s; retrying next page",
 						market_page,
 						market_cursor,
 						api_error,
 					)
-					sleep(1)
 					continue
 				logger.info(
 					"Fetched %s markets on page %s (next cursor=%s)",
@@ -287,24 +330,36 @@ def main() -> None:
 					market_page,
 					market_cursor,
 				)
-				if market_page == 1:
-					pprint([record.to_dict() for record in market_records[:5]])
 				if market_records:
-					try:
-						upserted = market_repository.save_markets(market_records)
-						logger.info("Persisted %s market rows to SQL Server", upserted)
-						market_total_rows += upserted
-					except DatabaseSaveError as db_error:
-						logger.error(
-							"Failed to persist market rows on page %s (cursor=%s): %s",
-							market_page,
-							market_cursor,
-							db_error,
-						)
-						# continue to next page even if this batch failed
+					buffer.extend(market_records)
+					if len(buffer) >= buffer_target:
+						try:
+							upserted = market_repository.save_markets(buffer, manage_truncate=False)
+							logger.info(
+								"Persisted %s market rows to SQL Server (buffer flush)",
+								upserted,
+							)
+							market_total_rows += upserted
+							buffer.clear()
+						except DatabaseSaveError as db_error:
+							logger.error(
+								"Failed to persist market rows on page %s (cursor=%s): %s",
+								market_page,
+								market_cursor,
+								db_error,
+							)
 				if not market_cursor:
 					break
 				market_page += 1
+			# flush remaining
+			if buffer:
+				try:
+					upserted = market_repository.save_markets(buffer, manage_truncate=False)
+					logger.info("Persisted %s remaining market rows to SQL Server", upserted)
+					market_total_rows += upserted
+				except DatabaseSaveError as db_error:
+					logger.error("Failed to persist remaining market rows: %s", db_error)
+			market_repository.reset_staging()
 			logger.info(
 				"Completed market sync; total rows persisted: %s",
 				market_total_rows,

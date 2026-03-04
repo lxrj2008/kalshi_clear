@@ -5,7 +5,6 @@ import json
 import logging
 from typing import Any, Optional, Tuple
 
-from http_request_demo import fetch_events
 from kalshi_client import KalshiAPIClient
 from models.event_record import EventRecord
 
@@ -57,21 +56,21 @@ class EventsService:
         return params
 
     def _fetch_raw_events(self, params: dict[str, Any]) -> dict[str, Any]:
-        # response = self._client.call(
-        #     "get_events_without_preload_content", authenticated=True, **params
-        # )
-        # raw = getattr(response, "data", None)
-        # text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw or "")
-        # try:
-        #     return json.loads(text)
-        # except json.JSONDecodeError:
-        #     self._logger.error("Unable to decode event payload: %s", text[:200])
-        #     return {}
-        payload = fetch_events(settings=self._client.settings, logger=self._logger, **params)
-        if isinstance(payload, dict):
-            return payload
-        self._logger.error("Unexpected event payload type: %s", type(payload))
-        return {}
+        try:
+            response = self._client.http_request(
+                "GET",
+                "/events",
+                authenticated=True,
+                params=params,
+            )
+            payload = response.json()
+            if isinstance(payload, dict):
+                return payload
+            self._logger.error("Unexpected event payload type: %s", type(payload))
+            return {}
+        except Exception as exc:  # pragma: no cover - network/IO
+            self._logger.error("Unable to fetch events: %s", exc)
+            return {}
 
     def _fetch_raw_event(self, event_ticker: str) -> dict[str, Any]:
         url = f"/events/{event_ticker}"

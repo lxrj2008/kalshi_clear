@@ -6,27 +6,117 @@ from typing import Optional, Sequence
 
 from config import KalshiSettings
 from models.market_record import MarketRecord
-from repositories.base_repository import BaseSQLRepository
+from repositories.base_repository import BaseSQLRepository, DatabaseSaveError
 
 
 class MarketRepository(BaseSQLRepository):
     """Insert market snapshots when absent in SQL Server."""
+
+    # Keep column order aligned with _build_row tuples and SQL statements.
+    COLUMNS: list[str] = [
+        "ticker",
+        "event_ticker",
+        "series_ticker",
+        "market_type",
+        "title",
+        "subtitle",
+        "yes_sub_title",
+        "no_sub_title",
+        "created_time",
+        "updated_time",
+        "open_time",
+        "close_time",
+        "expiration_time",
+        "latest_expiration_time",
+        "settlement_timer_seconds",
+        "status",
+        "response_price_units",
+        "yes_bid",
+        "yes_bid_dollars",
+        "yes_bid_size_fp",
+        "yes_ask",
+        "yes_ask_dollars",
+        "yes_ask_size_fp",
+        "no_bid",
+        "no_bid_dollars",
+        "no_ask",
+        "no_ask_dollars",
+        "last_price",
+        "last_price_dollars",
+        "volume",
+        "volume_fp",
+        "volume_24h",
+        "volume_24h_fp",
+        "result",
+        "can_close_early",
+        "fractional_trading_enabled",
+        "open_interest",
+        "open_interest_fp",
+        "notional_value",
+        "notional_value_dollars",
+        "previous_yes_bid",
+        "previous_yes_bid_dollars",
+        "previous_yes_ask",
+        "previous_yes_ask_dollars",
+        "previous_price",
+        "previous_price_dollars",
+        "liquidity",
+        "liquidity_dollars",
+        "expiration_value",
+        "tick_size",
+        "rules_primary",
+        "rules_secondary",
+        "price_level_structure",
+        "expected_expiration_time",
+        "settlement_value",
+        "settlement_value_dollars",
+        "settlement_ts",
+        "fee_waiver_expiration_time",
+        "early_close_condition",
+        "strike_type",
+        "floor_strike",
+        "cap_strike",
+        "functional_strike",
+        "mve_collection_ticker",
+        "primary_participant_key",
+        "is_provisional",
+        "AddTime",
+        "UpdateTime",
+    ]
 
     def __init__(
         self,
         settings: KalshiSettings,
         logger: Optional[object] = None,
         table_name: str = "dbo.KS_Markets",
+        staging_table: str = "dbo.KS_Markets_TEMP",
     ) -> None:
         super().__init__(settings, logger=logger)
         self.table_name = table_name
+        self.staging_table = staging_table
 
-    def save_markets(self, records: Sequence[MarketRecord]) -> int:
+    def save_markets(self, records: Sequence[MarketRecord], *, manage_truncate: bool = True) -> int:
         rows = [self._build_row(record) for record in records]
         if not rows:
             return 0
-        self.logger.debug("Prepared %s parameter sets for market insert-if-absent", len(rows))
-        return self._executemany(self.insert_statement, rows)
+        self.logger.debug(
+            "Prepared %s parameter sets for market insert-if-absent via staging",
+            len(rows),
+        )
+        if manage_truncate:
+            self._truncate_staging()
+        batch_size = 10000
+        for index in range(0, len(rows), batch_size):
+            batch = rows[index : index + batch_size]
+            self._executemany(self._staging_insert_statement, batch)
+        affected = self._merge_from_staging(total=len(rows))
+        # Always clear staging after merge to avoid reprocessing prior batches.
+        self._truncate_staging()
+        return affected
+
+    def reset_staging(self) -> None:
+        """Explicitly truncate the staging table; callers can control boundaries."""
+        self._truncate_staging()
 
     def update_market_fields(
         self,
@@ -77,15 +167,52 @@ class MarketRepository(BaseSQLRepository):
 
     @property
     def insert_statement(self) -> str:  # type: ignore[override]
+        # Fallback single-row merge retained for interface compatibility.
+        columns = ", ".join(self.COLUMNS)
+        placeholders = ", ".join(["?"] * len(self.COLUMNS))
+        source_values = ", ".join([f"source.{name}" for name in self.COLUMNS])
         return (
             f"MERGE {self.table_name} AS target "
-            "USING (VALUES (" + ", ".join(["?"] * 68) + ")) AS source "
-            "(ticker, event_ticker, series_ticker, market_type, title, subtitle, yes_sub_title, no_sub_title, created_time, updated_time, open_time, close_time, expiration_time, latest_expiration_time, settlement_timer_seconds, status, response_price_units, yes_bid, yes_bid_dollars, yes_bid_size_fp, yes_ask, yes_ask_dollars, yes_ask_size_fp, no_bid, no_bid_dollars, no_ask, no_ask_dollars, last_price, last_price_dollars, volume, volume_fp, volume_24h, volume_24h_fp, result, can_close_early, fractional_trading_enabled, open_interest, open_interest_fp, notional_value, notional_value_dollars, previous_yes_bid, previous_yes_bid_dollars, previous_yes_ask, previous_yes_ask_dollars, previous_price, previous_price_dollars, liquidity, liquidity_dollars, expiration_value, tick_size, rules_primary, rules_secondary, price_level_structure, expected_expiration_time, settlement_value, settlement_value_dollars, settlement_ts, fee_waiver_expiration_time, early_close_condition, strike_type, floor_strike, cap_strike, functional_strike, mve_collection_ticker, primary_participant_key, is_provisional, AddTime, UpdateTime) "
+            f"USING (VALUES ({placeholders})) AS source ({columns}) "
             "ON target.ticker = source.ticker "
             "WHEN NOT MATCHED THEN INSERT "
-            "(ticker, event_ticker, series_ticker, market_type, title, subtitle, yes_sub_title, no_sub_title, created_time, updated_time, open_time, close_time, expiration_time, latest_expiration_time, settlement_timer_seconds, status, response_price_units, yes_bid, yes_bid_dollars, yes_bid_size_fp, yes_ask, yes_ask_dollars, yes_ask_size_fp, no_bid, no_bid_dollars, no_ask, no_ask_dollars, last_price, last_price_dollars, volume, volume_fp, volume_24h, volume_24h_fp, result, can_close_early, fractional_trading_enabled, open_interest, open_interest_fp, notional_value, notional_value_dollars, previous_yes_bid, previous_yes_bid_dollars, previous_yes_ask, previous_yes_ask_dollars, previous_price, previous_price_dollars, liquidity, liquidity_dollars, expiration_value, tick_size, rules_primary, rules_secondary, price_level_structure, expected_expiration_time, settlement_value, settlement_value_dollars, settlement_ts, fee_waiver_expiration_time, early_close_condition, strike_type, floor_strike, cap_strike, functional_strike, mve_collection_ticker, primary_participant_key, is_provisional, AddTime, UpdateTime) "
-            "VALUES (source.ticker, source.event_ticker, source.series_ticker, source.market_type, source.title, source.subtitle, source.yes_sub_title, source.no_sub_title, source.created_time, source.updated_time, source.open_time, source.close_time, source.expiration_time, source.latest_expiration_time, source.settlement_timer_seconds, source.status, source.response_price_units, source.yes_bid, source.yes_bid_dollars, source.yes_bid_size_fp, source.yes_ask, source.yes_ask_dollars, source.yes_ask_size_fp, source.no_bid, source.no_bid_dollars, source.no_ask, source.no_ask_dollars, source.last_price, source.last_price_dollars, source.volume, source.volume_fp, source.volume_24h, source.volume_24h_fp, source.result, source.can_close_early, source.fractional_trading_enabled, source.open_interest, source.open_interest_fp, source.notional_value, source.notional_value_dollars, source.previous_yes_bid, source.previous_yes_bid_dollars, source.previous_yes_ask, source.previous_yes_ask_dollars, source.previous_price, source.previous_price_dollars, source.liquidity, source.liquidity_dollars, source.expiration_value, source.tick_size, source.rules_primary, source.rules_secondary, source.price_level_structure, source.expected_expiration_time, source.settlement_value, source.settlement_value_dollars, source.settlement_ts, source.fee_waiver_expiration_time, source.early_close_condition, source.strike_type, source.floor_strike, source.cap_strike, source.functional_strike, source.mve_collection_ticker, source.primary_participant_key, source.is_provisional, source.AddTime, source.UpdateTime);"
+            f"({columns}) VALUES ({source_values});"
         )
+
+    @property
+    def _staging_insert_statement(self) -> str:
+        columns = ", ".join(self.COLUMNS)
+        placeholders = ", ".join(["?"] * len(self.COLUMNS))
+        return f"INSERT INTO {self.staging_table} ({columns}) VALUES ({placeholders})"
+
+    @property
+    def _merge_from_staging_statement(self) -> str:
+        columns = ", ".join(self.COLUMNS)
+        source_values = ", ".join([f"source.{name}" for name in self.COLUMNS])
+        return (
+            f"MERGE {self.table_name} AS target "
+            f"USING {self.staging_table} AS source ON target.ticker = source.ticker "
+            "WHEN NOT MATCHED THEN INSERT "
+            f"({columns}) VALUES ({source_values});"
+        )
+
+    def _truncate_staging(self) -> None:
+        # Safe cleanup before/after batch insert to staging.
+        self._execute_update(f"TRUNCATE TABLE {self.staging_table}", [])
+
+    def _merge_from_staging(self, *, total: int) -> int:
+        try:
+            with self._connect() as connection:
+                cursor = connection.cursor()
+                cursor.execute(self._merge_from_staging_statement)
+                rowcount = cursor.rowcount
+                connection.commit()
+        except Exception as exc:  # pragma: no cover - driver/network
+            self.logger.error("Merge from staging failed: %s", exc)
+            raise DatabaseSaveError("Unable to persist rows to SQL Server") from exc
+        affected = rowcount if rowcount >= 0 else total
+        self.logger.info("Merged %s market rows from staging", affected)
+        return affected
 
     def _build_row(self, record: MarketRecord) -> tuple[object, ...]:
         # ensure timestamps for auditing if not supplied

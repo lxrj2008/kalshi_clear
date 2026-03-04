@@ -47,10 +47,6 @@ class KalshiAPIClient:
         self._auth_enabled = False
         # Reuse a single session to benefit from HTTP connection pooling.
         self._session = requests.Session()
-        # Increase pool sizes to reduce TCP/TLS handshakes on bursty workloads.
-        adapter = HTTPAdapter(pool_connections=16, pool_maxsize=64)
-        self._session.mount("http://", adapter)
-        self._session.mount("https://", adapter)
         private_key = self.settings.read_private_key()
         parsed_host = urlparse(settings.host)
         self._base_path = (parsed_host.path or "").rstrip("/")
