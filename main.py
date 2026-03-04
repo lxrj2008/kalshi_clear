@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from threading import Thread
 from time import sleep
 
@@ -287,20 +288,27 @@ def main() -> None:
 		except DatabaseSaveError as db_error:
 			logger.error("Failed to persist event data: %s", db_error)
 
-	def run_markets_job() -> None:
+	def run_markets_job(*, status: str | None = None, use_created_filter: bool = False) -> None:
 		try:
 			market_cursor = None
 			market_total_rows = 0
 			market_page = 1
 			buffer: list[MarketRecord] = []
 			buffer_target = 10_000
+			min_created_ts = int(time.time()) - 18_000 if use_created_filter else None
+			if status:
+				logger.info("Applying markets status filter: %s", status)
+			if min_created_ts is not None:
+				logger.info("Applying markets min_created_ts filter: %s", min_created_ts)
 			market_repository.reset_staging()
 			while True:
 				try:
-					market_records, market_cursor = markets_service.list_market_records(
-						limit=1000,
-						cursor=market_cursor,
-					)
+					filters = {"limit": 1000, "cursor": market_cursor}
+					if status:
+						filters["status"] = status
+					if min_created_ts is not None:
+						filters["min_created_ts"] = min_created_ts
+					market_records, market_cursor = markets_service.list_market_records(**filters)
 				except KalshiAPIError as api_error:
 					if buffer:
 						try:
@@ -375,7 +383,8 @@ def main() -> None:
 		run_tags_and_filters_job()
 		run_series_job()
 		run_events_job()
-		run_markets_job()
+		run_markets_job(status="open", use_created_filter=False)
+		
 
 		scheduler = BackgroundScheduler(job_defaults={"max_instances": 1, "coalesce": True})
 		scheduler.add_job(
@@ -398,13 +407,14 @@ def main() -> None:
 		)
 		scheduler.add_job(
 			run_markets_job,
-			CronTrigger(hour=8, minute=0),
+			CronTrigger(minute=0),
+			kwargs={"use_created_filter": True},
 			id="markets_job",
 			replace_existing=True,
 		)
 		scheduler.start()
 		logger.info(
-			"Scheduler started: tags/filters hourly; series hourly; events hourly; markets daily 08:00"
+			"Scheduler started: tags/filters hourly; series hourly; events hourly; markets hourly"
 		)
 	else:
 		logger.warning("Skipping authenticated example because credentials are missing.")
