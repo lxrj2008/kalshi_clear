@@ -218,12 +218,15 @@ def main() -> None:
 			page = 1
 			buffer: list[EventRecord] = []
 			buffer_target = 10_000
+			status_filter = "open"
 			event_repository.reset_staging()
+			logger.info("Applying events status filter: %s", status_filter)
 			while True:
 				try:
 					event_records, milestones, cursor = events_service.list_event_records(
 						limit=200,
 						cursor=cursor,
+						status=status_filter,
 					)
 				except KalshiAPIError as api_error:
 					if buffer:
@@ -395,19 +398,19 @@ def main() -> None:
 		)
 		scheduler.add_job(
 			run_series_job,
-			CronTrigger(minute=0),
+			CronTrigger(minute=5),
 			id="series_job",
 			replace_existing=True,
 		)
 		scheduler.add_job(
 			run_events_job,
-			CronTrigger(minute=0),
+			CronTrigger(minute=10),
 			id="events_job",
 			replace_existing=True,
 		)
 		scheduler.add_job(
 			run_markets_job,
-			CronTrigger(minute=0),
+			CronTrigger(minute=30),
 			kwargs={"use_created_filter": True},
 			id="markets_job",
 			replace_existing=True,
