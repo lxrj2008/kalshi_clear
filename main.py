@@ -66,13 +66,41 @@ def main() -> None:
 	series_repository = SeriesRepository(settings, logger=logger)
 	event_repository = EventRepository(settings, logger=logger)
 	market_repository = MarketRepository(settings, logger=logger)
-	category_repository = CategoryRepository(settings, logger=logger)
-	tag_repository = TagRepository(settings, logger=logger)
-	sport_repository = SportRepository(settings, logger=logger)
-	competition_repository = CompetitionRepository(settings, logger=logger)
-	scope_repository = ScopeRepository(settings, logger=logger)
-	sport_scope_repository = SportScopeRepository(settings, logger=logger)
-	competition_scope_repository = CompetitionScopeRepository(settings, logger=logger)
+	category_repository = CategoryRepository(
+		settings,
+		logger=logger,
+		database_name=settings.sqlserver_secondary_database,
+	)
+	tag_repository = TagRepository(
+		settings,
+		logger=logger,
+		database_name=settings.sqlserver_secondary_database,
+	)
+	sport_repository = SportRepository(
+		settings,
+		logger=logger,
+		database_name=settings.sqlserver_secondary_database,
+	)
+	competition_repository = CompetitionRepository(
+		settings,
+		logger=logger,
+		database_name=settings.sqlserver_secondary_database,
+	)
+	scope_repository = ScopeRepository(
+		settings,
+		logger=logger,
+		database_name=settings.sqlserver_secondary_database,
+	)
+	sport_scope_repository = SportScopeRepository(
+		settings,
+		logger=logger,
+		database_name=settings.sqlserver_secondary_database,
+	)
+	competition_scope_repository = CompetitionScopeRepository(
+		settings,
+		logger=logger,
+		database_name=settings.sqlserver_secondary_database,
+	)
 	# response1 = client.call(
     #         "get_settlements_without_preload_content", authenticated=True)
 	# response=client.sdk_client.get_settlements()

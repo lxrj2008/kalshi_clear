@@ -17,8 +17,9 @@ class TagRepository(BaseSQLRepository):
         settings: KalshiSettings,
         logger: Optional[object] = None,
         table_name: str = "dbo.KS_Tags",
+        database_name: str | None = None,
     ) -> None:
-        super().__init__(settings, logger=logger)
+        super().__init__(settings, logger=logger, database_name=database_name)
         self.table_name = table_name
 
     def save_tags(self, records: Sequence[TagRecord]) -> int:

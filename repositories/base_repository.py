@@ -17,8 +17,14 @@ class DatabaseSaveError(RuntimeError):
 class BaseSQLRepository(ABC):
     """Provide a consistent way to write batched rows into SQL Server."""
 
-    def __init__(self, settings: KalshiSettings, logger: logging.Logger | None = None) -> None:
+    def __init__(
+        self,
+        settings: KalshiSettings,
+        logger: logging.Logger | None = None,
+        database_name: str | None = None,
+    ) -> None:
         self.settings = settings
+        self.database_name = database_name
         base_logger = logger or logging.getLogger("kalshi")
         self.logger = base_logger.getChild(self.__class__.__name__.lower())
 
@@ -59,7 +65,8 @@ class BaseSQLRepository(ABC):
         return rowcount
 
     def _connect(self) -> pyodbc.Connection:
-        return pyodbc.connect(self.settings.sqlserver_connection_string)
+        connection_string = self.settings.build_sqlserver_connection_string(self.database_name)
+        return pyodbc.connect(connection_string)
 
     @property
     @abstractmethod

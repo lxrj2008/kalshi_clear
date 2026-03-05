@@ -17,8 +17,9 @@ class CompetitionRepository(BaseSQLRepository):
         settings: KalshiSettings,
         logger: Optional[object] = None,
         table_name: str = "dbo.KS_Competitions",
+        database_name: str | None = None,
     ) -> None:
-        super().__init__(settings, logger=logger)
+        super().__init__(settings, logger=logger, database_name=database_name)
         self.table_name = table_name
 
     def save_competitions(self, records: Sequence[CompetitionRecord]) -> int:

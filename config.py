@@ -59,6 +59,11 @@ class KalshiSettings(BaseSettings):
         validation_alias="SQLSERVER_DATABASE",
         description="Target SQL Server database name",
     )
+    sqlserver_secondary_database: Optional[str] = Field(
+        "CMEClearDB",
+        validation_alias="SQLSERVER_SECONDARY_DATABASE",
+        description="Optional secondary SQL Server database name for reference tables",
+    )
     sqlserver_username: str = Field(
         "sa",
         validation_alias="SQLSERVER_USERNAME",
@@ -100,12 +105,13 @@ class KalshiSettings(BaseSettings):
                 f"Private key file not found at {self.private_key_path}"
             ) from exc
 
-    def build_sqlserver_connection_string(self) -> str:
-        """Construct a pyodbc-friendly connection string."""
+    def build_sqlserver_connection_string(self, database: Optional[str] = None) -> str:
+        """Construct a pyodbc-friendly connection string for the requested database."""
+        db_name = database or self.sqlserver_database
         parts = [
             f"DRIVER={{{self.sqlserver_driver}}}",
             f"SERVER={self.sqlserver_host},{self.sqlserver_port}",
-            f"DATABASE={self.sqlserver_database}",
+            f"DATABASE={db_name}",
             "Encrypt=yes",
         ]
         if self.sqlserver_username:

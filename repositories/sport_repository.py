@@ -17,8 +17,9 @@ class SportRepository(BaseSQLRepository):
         settings: KalshiSettings,
         logger: Optional[object] = None,
         table_name: str = "dbo.KS_Sports",
+        database_name: str | None = None,
     ) -> None:
-        super().__init__(settings, logger=logger)
+        super().__init__(settings, logger=logger, database_name=database_name)
         self.table_name = table_name
 
     def save_sports(self, records: Sequence[SportRecord]) -> int:
