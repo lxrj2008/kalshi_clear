@@ -251,7 +251,7 @@ def main() -> None:
 			logger.info("Applying events status filter: %s", status_filter)
 			while True:
 				try:
-					event_records, milestones, cursor = events_service.list_event_records(
+					event_records, cursor = events_service.list_event_records(
 						limit=200,
 						cursor=cursor,
 						status=status_filter,
