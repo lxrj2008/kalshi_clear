@@ -74,7 +74,7 @@ async def listen_ws(settings: KalshiSettings | None = None, logger: logging.Logg
             async with connect(
                 ws_url,
                 additional_headers=list(headers.items()),
-                ping_interval=20,
+                ping_interval=15,
                 ping_timeout=30,
                 max_size=None,
             ) as websocket:
@@ -160,7 +160,7 @@ async def _handle_market_created(
         return
 
     try:
-        await loop.run_in_executor(None, market_repo.save_markets, [record])
+        await loop.run_in_executor(None, partial(market_repo.save_markets, manage_truncate=False), [record])
         logger.info("Saved new market record for ticker=%s", ticker)
     except Exception as exc:  
         logger.error("Failed to persist market %s: %s", ticker, exc)
@@ -225,7 +225,9 @@ async def _handle_market_update(
             return
 
         try:
-            await loop.run_in_executor(None, market_repo.save_markets, [record])
+            await loop.run_in_executor(
+                None, partial(market_repo.save_markets, manage_truncate=False), [record]
+            )
             logger.info("Inserted market ticker=%s after zero-update fallback", ticker)
         except Exception as exc:  
             logger.error("Failed to persist market %s after zero-update fallback: %s", ticker, exc)
