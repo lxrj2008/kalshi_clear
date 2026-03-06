@@ -179,15 +179,15 @@ def main() -> None:
 								if scope_name not in scope_seen:
 									scope_seen.add(scope_name)
 									scope_records.append(ScopeRecord(name=scope_name))
-							pair = (comp_name, scope_name)
-							if pair not in competition_scope_seen:
-								competition_scope_seen.add(pair)
-								competition_scope_records.append(
-									CompetitionScopeRecord(
-										competition_name=comp_name,
-										scope_name=scope_name,
+								pair = (comp_name, scope_name)
+								if pair not in competition_scope_seen:
+									competition_scope_seen.add(pair)
+									competition_scope_records.append(
+										CompetitionScopeRecord(
+											competition_name=comp_name,
+											scope_name=scope_name,
+										)
 									)
-								)
 						else:
 							logger.debug(
 								"Competition %s under sport %s has no scopes list", comp_name, sport_name
@@ -246,6 +246,7 @@ def main() -> None:
 			buffer: list[EventRecord] = []
 			buffer_target = 10_000
 			status_filter = "open"
+			retry_attempt = 0
 			event_repository.reset_staging()
 			logger.info("Applying events status filter: %s", status_filter)
 			while True:
@@ -255,6 +256,7 @@ def main() -> None:
 						cursor=cursor,
 						status=status_filter,
 					)
+					retry_attempt = 0
 				except KalshiAPIError as api_error:
 					if buffer:
 						try:
@@ -270,12 +272,16 @@ def main() -> None:
 								cursor,
 								db_error,
 							)
+					retry_attempt += 1
+					backoff_seconds = min(2**retry_attempt, 60)
 					logger.warning(
-						"Events request failed on page %s (cursor=%s): %s; retrying next page",
+						"Events request failed on page %s (cursor=%s): %s; retrying after %ss",
 						page,
 						cursor,
 						api_error,
+						backoff_seconds,
 					)
+					sleep(backoff_seconds)
 					continue
 				logger.info(
 					"Fetched %s events on page %s (next cursor=%s)",
@@ -325,6 +331,7 @@ def main() -> None:
 			buffer: list[MarketRecord] = []
 			buffer_target = 10_000
 			min_created_ts = int(time.time()) - 18_000 if use_created_filter else None
+			retry_attempt = 0
 			if status:
 				logger.info("Applying markets status filter: %s", status)
 			if min_created_ts is not None:
@@ -338,6 +345,7 @@ def main() -> None:
 					if min_created_ts is not None:
 						filters["min_created_ts"] = min_created_ts
 					market_records, market_cursor = markets_service.list_market_records(**filters)
+					retry_attempt = 0
 				except KalshiAPIError as api_error:
 					if buffer:
 						try:
@@ -354,12 +362,16 @@ def main() -> None:
 								market_cursor,
 								db_error,
 							)
+					retry_attempt += 1
+					backoff_seconds = min(2**retry_attempt, 60)
 					logger.warning(
-						"Markets request failed on page %s (cursor=%s): %s; retrying next page",
+						"Markets request failed on page %s (cursor=%s): %s; retrying after %ss",
 						market_page,
 						market_cursor,
 						api_error,
+						backoff_seconds,
 					)
+					sleep(backoff_seconds)
 					continue
 				logger.info(
 					"Fetched %s markets on page %s (next cursor=%s)",
