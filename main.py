@@ -247,6 +247,7 @@ def main() -> None:
 			buffer_target = 10_000
 			status_filter = "open"
 			retry_attempt = 0
+			max_retries = 10
 			event_repository.reset_staging()
 			logger.info("Applying events status filter: %s", status_filter)
 			while True:
@@ -273,6 +274,13 @@ def main() -> None:
 								db_error,
 							)
 					retry_attempt += 1
+					if retry_attempt > max_retries:
+						logger.error(
+							"Events request failed too many times on page %s (cursor=%s); aborting this run",
+							page,
+							cursor,
+						)
+						break
 					backoff_seconds = min(2**retry_attempt, 60)
 					logger.warning(
 						"Events request failed on page %s (cursor=%s): %s; retrying after %ss",
@@ -332,6 +340,7 @@ def main() -> None:
 			buffer_target = 10_000
 			min_created_ts = int(time.time()) - 18_000 if use_created_filter else None
 			retry_attempt = 0
+			max_retries = 10
 			if status:
 				logger.info("Applying markets status filter: %s", status)
 			if min_created_ts is not None:
@@ -363,6 +372,13 @@ def main() -> None:
 								db_error,
 							)
 					retry_attempt += 1
+					if retry_attempt > max_retries:
+						logger.error(
+							"Markets request failed too many times on page %s (cursor=%s); aborting this run",
+							market_page,
+							market_cursor,
+						)
+						break
 					backoff_seconds = min(2**retry_attempt, 60)
 					logger.warning(
 						"Markets request failed on page %s (cursor=%s): %s; retrying after %ss",
