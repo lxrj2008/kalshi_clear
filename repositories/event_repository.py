@@ -91,7 +91,8 @@ class EventRepository(BaseSQLRepository):
         )
 
     def _truncate_staging(self) -> None:
-        self._execute_update(f"TRUNCATE TABLE {self.staging_table}", [])
+        # Suppress rowcount logging because TRUNCATE returns -1 and isn't actionable.
+        self._execute_update(f"TRUNCATE TABLE {self.staging_table}", [], log_result=False)
 
     def _merge_from_staging(self, *, total: int) -> int:
         try:

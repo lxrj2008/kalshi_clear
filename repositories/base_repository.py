@@ -51,7 +51,7 @@ class BaseSQLRepository(ABC):
         self.logger.info("Inserted %s rows", affected)
         return affected
 
-    def _execute_update(self, statement: str, params: Sequence[object]) -> int:
+    def _execute_update(self, statement: str, params: Sequence[object], *, log_result: bool = True) -> int:
         try:
             with self._connect() as connection:
                 cursor = connection.cursor()
@@ -61,7 +61,8 @@ class BaseSQLRepository(ABC):
         except pyodbc.Error as exc:  # pragma: no cover - depends on driver
             self.logger.error("Update failed: %s", exc)
             raise DatabaseSaveError("Unable to persist rows to SQL Server") from exc
-        self.logger.info("Updated %s rows", rowcount)
+        if log_result:
+            self.logger.info("Updated %s rows", rowcount)
         return rowcount
 
     def _connect(self) -> pyodbc.Connection:

@@ -197,8 +197,7 @@ class MarketRepository(BaseSQLRepository):
         )
 
     def _truncate_staging(self) -> None:
-        # Safe cleanup before/after batch insert to staging.
-        self._execute_update(f"TRUNCATE TABLE {self.staging_table}", [])
+        self._execute_update(f"TRUNCATE TABLE {self.staging_table}", [], log_result=False)
 
     def _merge_from_staging(self, *, total: int) -> int:
         try:
