@@ -87,7 +87,7 @@ async def listen_ws(settings: KalshiSettings | None = None, logger: logging.Logg
         except AuthenticationConfigError as exc:
             logger.error("WebSocket auth error: %s; cannot reconnect without valid credentials", exc)
             break
-        except Exception as exc:  # pragma: no cover - safeguard for demo usage
+        except Exception as exc:  
             logger.error("WebSocket listener failed: %s; reconnecting in %ss", exc, backoff_seconds)
 
         try:
@@ -151,7 +151,7 @@ async def _handle_market_created(
     loop = asyncio.get_running_loop()
     try:
         record = await asyncio.to_thread(markets_service.fetch_market_record, ticker)
-    except Exception as exc:  # pragma: no cover - network/IO protection
+    except Exception as exc:  
         logger.error("Failed to fetch market %s: %s", ticker, exc)
         return
 
@@ -162,7 +162,7 @@ async def _handle_market_created(
     try:
         await loop.run_in_executor(None, market_repo.save_markets, [record])
         logger.info("Saved new market record for ticker=%s", ticker)
-    except Exception as exc:  # pragma: no cover - DB errors
+    except Exception as exc:  
         logger.error("Failed to persist market %s: %s", ticker, exc)
 
 
@@ -209,14 +209,14 @@ async def _handle_market_update(
         )
         updated = await loop.run_in_executor(None, update_task)
         logger.info("Updated market ticker=%s rows=%s", ticker, updated)
-    except Exception as exc:  # pragma: no cover - DB errors
+    except Exception as exc:  
         logger.error("Failed to update market %s: %s", ticker, exc)
         return
 
     if updated == 0:
         try:
             record = await asyncio.to_thread(markets_service.fetch_market_record, ticker)
-        except Exception as exc:  # pragma: no cover - network/IO protection
+        except Exception as exc:
             logger.error("Failed to refetch market %s after zero updates: %s", ticker, exc)
             return
 
@@ -227,7 +227,7 @@ async def _handle_market_update(
         try:
             await loop.run_in_executor(None, market_repo.save_markets, [record])
             logger.info("Inserted market ticker=%s after zero-update fallback", ticker)
-        except Exception as exc:  # pragma: no cover - DB errors
+        except Exception as exc:  
             logger.error("Failed to persist market %s after zero-update fallback: %s", ticker, exc)
 
 
@@ -245,7 +245,7 @@ async def _handle_event_created(
     loop = asyncio.get_running_loop()
     try:
         record = await asyncio.to_thread(events_service.fetch_event_record, event_ticker)
-    except Exception as exc:  # pragma: no cover - network/IO protection
+    except Exception as exc:
         logger.error("Failed to fetch event %s: %s", event_ticker, exc)
         return
 
@@ -256,7 +256,7 @@ async def _handle_event_created(
     try:
         await loop.run_in_executor(None, event_repo.save_events, [record])
         logger.info("Saved new event record for event_ticker=%s", event_ticker)
-    except Exception as exc:  # pragma: no cover - DB errors
+    except Exception as exc:
         logger.error("Failed to persist event %s: %s", event_ticker, exc)
 
 

@@ -106,7 +106,6 @@ class MarketRepository(BaseSQLRepository):
             batch = rows[index : index + batch_size]
             self._executemany(self._staging_insert_statement, batch)
         affected = self._merge_from_staging(total=len(rows))
-        # Always clear staging after merge to avoid reprocessing prior batches.
         self._truncate_staging()
         return affected
 
@@ -161,8 +160,7 @@ class MarketRepository(BaseSQLRepository):
         return self._execute_update(statement, params)
 
     @property
-    def insert_statement(self) -> str:  # type: ignore[override]
-        # Fallback single-row merge retained for interface compatibility.
+    def insert_statement(self) -> str:  
         columns = ", ".join(self.COLUMNS)
         placeholders = ", ".join(["?"] * len(self.COLUMNS))
         source_values = ", ".join([f"source.{name}" for name in self.COLUMNS])
@@ -201,7 +199,7 @@ class MarketRepository(BaseSQLRepository):
                 cursor.execute(self._merge_from_staging_statement)
                 rowcount = cursor.rowcount
                 connection.commit()
-        except Exception as exc:  # pragma: no cover - driver/network
+        except Exception as exc:  
             self.logger.error("Merge from staging failed: %s", exc)
             raise DatabaseSaveError("Unable to persist rows to SQL Server") from exc
         affected = rowcount if rowcount >= 0 else total
@@ -209,7 +207,6 @@ class MarketRepository(BaseSQLRepository):
         return affected
 
     def _build_row(self, record: MarketRecord) -> tuple[object, ...]:
-        # ensure timestamps for auditing if not supplied
         now = datetime.now()
         add_time = record.add_time or now
         update_time = record.update_time or now

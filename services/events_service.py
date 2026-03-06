@@ -1,7 +1,6 @@
 """Helpers for retrieving Kalshi events through the reusable API client."""
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any, Optional, Tuple
 
@@ -68,7 +67,7 @@ class EventsService:
                 return payload
             self._logger.error("Unexpected event payload type: %s", type(payload))
             return {}
-        except Exception as exc:  # pragma: no cover - network/IO
+        except Exception as exc:  
             self._logger.error("Unable to fetch events: %s", exc)
             return {}
 
@@ -77,7 +76,7 @@ class EventsService:
         try:
             response = self._client.http_request("GET", url, authenticated=True)
             return response.json()
-        except Exception as exc:  # pragma: no cover - network/IO
+        except Exception as exc:  
             self._logger.error("Unable to fetch event %s: %s", event_ticker, exc)
             return {}
 

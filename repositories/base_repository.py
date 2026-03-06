@@ -44,7 +44,7 @@ class BaseSQLRepository(ABC):
                 cursor.executemany(statement, rows)
                 rowcount = cursor.rowcount
                 connection.commit()
-        except pyodbc.Error as exc:  # pragma: no cover - depends on driver
+        except pyodbc.Error as exc:  
             self.logger.error("Bulk insert failed: %s", exc)
             raise DatabaseSaveError("Unable to persist rows to SQL Server") from exc
         affected = rowcount if rowcount >= 0 else len(rows)
@@ -58,7 +58,7 @@ class BaseSQLRepository(ABC):
                 cursor.execute(statement, params)
                 connection.commit()
                 rowcount = cursor.rowcount
-        except pyodbc.Error as exc:  # pragma: no cover - depends on driver
+        except pyodbc.Error as exc:  
             self.logger.error("Update failed: %s", exc)
             raise DatabaseSaveError("Unable to persist rows to SQL Server") from exc
         if log_result:

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Optional
 
 from kalshi_client import KalshiAPIClient
 

@@ -10,7 +10,6 @@ from urllib.parse import urlparse
 
 import kalshi_python
 import requests
-from requests.adapters import HTTPAdapter
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -93,7 +92,7 @@ class KalshiAPIClient:
             raise KalshiAPIError(
                 f"Kalshi API error during '{operation}': {api_exc.reason}"
             ) from api_exc
-        except Exception as exc:  # pragma: no cover - safeguard
+        except Exception as exc:  
             self._log_failure(operation, authenticated, start, exc)
             raise
         duration_ms = (time.perf_counter() - start) * 1000

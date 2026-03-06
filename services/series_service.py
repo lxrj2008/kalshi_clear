@@ -32,7 +32,6 @@ class SeriesService:
         if(tags := filters.get("tags")):
             params["tags"] = tags
 
-        # Pass through any additional filters that were provided explicitly.
         for key, value in filters.items():
             if key in params or value is None:
                 continue
@@ -52,7 +51,7 @@ class SeriesService:
                 return payload
             self._logger.error("Unexpected series payload type: %s", type(payload))
             return {}
-        except Exception as exc:  # pragma: no cover - network/IO
+        except Exception as exc:  
             self._logger.error("Unable to fetch series: %s", exc)
             return {}
 

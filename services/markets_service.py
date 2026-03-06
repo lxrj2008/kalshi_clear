@@ -1,7 +1,6 @@
 """Helpers for retrieving Kalshi markets with pagination support."""
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any, Optional, Tuple
 
@@ -77,7 +76,7 @@ class MarketsService:
                 return payload
             self._logger.error("Unexpected market payload type: %s", type(payload))
             return {}
-        except Exception as exc:  # pragma: no cover - network/IO
+        except Exception as exc:  
             self._logger.error("Unable to fetch markets: %s", exc)
             return {}
 
@@ -86,7 +85,7 @@ class MarketsService:
         try:
             response = self._client.http_request("GET", url, authenticated=True)
             return response.json()
-        except Exception as exc:  # pragma: no cover - network/IO
+        except Exception as exc:  
             self._logger.error("Unable to fetch market %s: %s", ticker, exc)
             return {}
 

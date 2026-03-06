@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from threading import Thread
 from time import sleep
@@ -52,7 +51,7 @@ def main() -> None:
 	def _run_ws_listener() -> None:
 		try:
 			asyncio.run(listen_ws(settings=settings, logger=logger))
-		except Exception as exc:  # pragma: no cover - background safety
+		except Exception as exc:  
 			logger.error("WebSocket listener stopped: %s", exc)
 
 	ws_thread = Thread(target=_run_ws_listener, name="kalshi-ws-listener", daemon=True)
@@ -304,7 +303,6 @@ def main() -> None:
 				page += 1
 				if not cursor:
 					break
-			# flush remaining
 			if buffer:
 				try:
 					upserted = event_repository.save_events(buffer, manage_truncate=False)
@@ -390,7 +388,6 @@ def main() -> None:
 				if not market_cursor:
 					break
 				market_page += 1
-			# flush remaining
 			if buffer:
 				try:
 					upserted = market_repository.save_markets(buffer, manage_truncate=False)

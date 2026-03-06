@@ -29,7 +29,7 @@ class CategoryRepository(BaseSQLRepository):
         return self._executemany(self.insert_statement, rows)
 
     @property
-    def insert_statement(self) -> str:  # type: ignore[override]
+    def insert_statement(self) -> str:  
         return (
             f"MERGE {self.table_name} AS target "
             "USING (VALUES (?, ?, ?)) AS source "
