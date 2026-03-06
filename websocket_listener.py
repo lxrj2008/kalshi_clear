@@ -256,7 +256,9 @@ async def _handle_event_created(
         return
 
     try:
-        await loop.run_in_executor(None, event_repo.save_events, [record])
+        await loop.run_in_executor(
+            None, partial(event_repo.save_events, manage_truncate=False), [record]
+        )
         logger.info("Saved new event record for event_ticker=%s", event_ticker)
     except Exception as exc:
         logger.error("Failed to persist event %s: %s", event_ticker, exc)
