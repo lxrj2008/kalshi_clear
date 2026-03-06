@@ -99,10 +99,6 @@ class MarketRepository(BaseSQLRepository):
         rows = [self._build_row(record) for record in records]
         if not rows:
             return 0
-        self.logger.debug(
-            "Prepared %s parameter sets for market insert-if-absent via staging",
-            len(rows),
-        )
         if manage_truncate:
             self._truncate_staging()
         batch_size = 10000
@@ -158,7 +154,6 @@ class MarketRepository(BaseSQLRepository):
         params.append(datetime.now())
 
         if not assignments:
-            self.logger.debug("No market fields supplied for update; ticker=%s", ticker)
             return 0
 
         params.append(ticker)

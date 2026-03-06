@@ -86,14 +86,6 @@ class KalshiAPIClient:
         params: dict[str, Any],
     ) -> Any:
         start = time.perf_counter()
-        self.logger.debug(
-            "Kalshi request started",
-            extra={
-                "operation": operation,
-                "authenticated": authenticated,
-                "params": params,
-            },
-        )
         try:
             response = endpoint(**params)
         except ApiException as api_exc:

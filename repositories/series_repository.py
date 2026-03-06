@@ -23,7 +23,6 @@ class SeriesRepository(BaseSQLRepository):
 
     def save_series(self, records: Sequence[SeriesRecord]) -> int:
         rows = [self._build_row(record) for record in records]
-        self.logger.debug("Prepared %s parameter sets for series upsert", len(rows))
         return self._executemany(self.insert_statement, rows)
 
     @property

@@ -26,7 +26,6 @@ class SportScopeRepository(BaseSQLRepository):
         rows = [self._build_row(record) for record in records]
         if not rows:
             return 0
-        self.logger.debug("Prepared %s parameter sets for sport-scope upsert", len(rows))
         return self._executemany(self.insert_statement, rows)
 
     @property

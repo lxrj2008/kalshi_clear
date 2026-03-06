@@ -44,10 +44,6 @@ class EventRepository(BaseSQLRepository):
         rows = [self._build_row(record) for record in records]
         if not rows:
             return 0
-        self.logger.debug(
-            "Prepared %s parameter sets for event insert-if-absent via staging",
-            len(rows),
-        )
         if manage_truncate:
             self._truncate_staging()
         batch_size = 10000
@@ -91,7 +87,6 @@ class EventRepository(BaseSQLRepository):
         )
 
     def _truncate_staging(self) -> None:
-        # Suppress rowcount logging because TRUNCATE returns -1 and isn't actionable.
         self._execute_update(f"TRUNCATE TABLE {self.staging_table}", [], log_result=False)
 
     def _merge_from_staging(self, *, total: int) -> int:
