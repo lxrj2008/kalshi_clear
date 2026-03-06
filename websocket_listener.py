@@ -74,8 +74,8 @@ async def listen_ws(settings: KalshiSettings | None = None, logger: logging.Logg
             async with connect(
                 ws_url,
                 additional_headers=list(headers.items()),
-                ping_interval=10,
-                ping_timeout=20,
+                ping_interval=20,
+                ping_timeout=30,
                 max_size=None,
             ) as websocket:
                 logger.info("WebSocket connected (attempt %s); subscribed and consuming", attempt)
