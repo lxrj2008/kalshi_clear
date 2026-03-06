@@ -18,6 +18,7 @@ from repositories.event_repository import EventRepository
 from repositories.market_repository import MarketRepository
 from services.events_service import EventsService
 from services.markets_service import MarketsService
+from utils.notifications import send_email_notification
 
 
 def _build_ws_url(settings: KalshiSettings) -> str:
@@ -86,9 +87,19 @@ async def listen_ws(settings: KalshiSettings | None = None, logger: logging.Logg
             logger.warning("WebSocket closed: %s; reconnecting in %ss", exc, backoff_seconds)
         except AuthenticationConfigError as exc:
             logger.error("WebSocket auth error: %s; cannot reconnect without valid credentials", exc)
+            send_email_notification(
+                "[KalshiClear] WebSocket auth error",
+                f"Auth failed: {exc}\nAttempt: {attempt}",
+                logger,
+            )
             break
         except Exception as exc:  
             logger.error("WebSocket listener failed: %s; reconnecting in %ss", exc, backoff_seconds)
+            send_email_notification(
+                "[KalshiClear] WebSocket listener failure",
+                f"Listener exception: {exc}\nAttempt: {attempt}\nNext retry in: {backoff_seconds}s",
+                logger,
+            )
 
         try:
             await asyncio.sleep(backoff_seconds)
