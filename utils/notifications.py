@@ -4,6 +4,11 @@ from __future__ import annotations
 import os
 import smtplib
 from email.message import EmailMessage
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / ".env", override=False)
 
 
 def send_email_notification(subject: str, body: str, logger) -> None:
