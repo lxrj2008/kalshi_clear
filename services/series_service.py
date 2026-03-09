@@ -23,6 +23,14 @@ class SeriesService:
         items = payload.get("series", []) if isinstance(payload, dict) else []
         return [SeriesRecord.from_api(item) for item in items]
 
+    def fetch_series_record(self, ticker: str) -> Optional[SeriesRecord]:
+        payload = self._fetch_raw_series_by_ticker(ticker)
+        series = payload.get("series") if isinstance(payload, dict) else None
+        if not series:
+            self._logger.warning("No series payload returned for ticker=%s", ticker)
+            return None
+        return SeriesRecord.from_api(series)
+
     def _build_params(self, **filters: Any) -> dict[str, Any]:
         params: dict[str, Any] = {}
         if(category := filters.get("category")):
@@ -53,6 +61,15 @@ class SeriesService:
             return {}
         except Exception as exc:  
             self._logger.error("Unable to fetch series: %s", exc)
+            return {}
+
+    def _fetch_raw_series_by_ticker(self, ticker: str) -> dict[str, Any]:
+        url = f"/series/{ticker}"
+        try:
+            response = self._client.http_request("GET", url, authenticated=True)
+            return response.json()
+        except Exception as exc:  
+            self._logger.error("Unable to fetch series %s: %s", ticker, exc)
             return {}
 
 

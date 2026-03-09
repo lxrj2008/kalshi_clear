@@ -10,8 +10,10 @@ from logging_setup import configure_logging
 from repositories.base_repository import DatabaseSaveError
 from repositories.event_repository import EventRepository
 from repositories.market_repository import MarketRepository
+from repositories.series_repository import SeriesRepository
 from services.events_service import EventsService
 from services.markets_service import MarketsService
+from services.series_service import SeriesService
 
 
 def sync_single_event(ticker: str, events_service: EventsService, event_repository: EventRepository, logger) -> None:
@@ -44,6 +46,21 @@ def sync_single_market(ticker: str, markets_service: MarketsService, market_repo
         logger.error("Failed to persist market %s: %s", ticker, db_error)
 
 
+def sync_single_series(ticker: str, series_service: SeriesService, series_repository: SeriesRepository, logger) -> None:
+    try:
+        record = series_service.fetch_series_record(ticker)
+        if not record:
+            logger.warning("No series returned for ticker=%s", ticker)
+            return
+        pprint(record.to_dict())
+        upserted = series_repository.save_series([record])
+        logger.info("Persisted %s series row(s) for ticker=%s", upserted, ticker)
+    except KalshiAPIError as api_error:
+        logger.error("Series request failed for %s: %s", ticker, api_error)
+    except DatabaseSaveError as db_error:
+        logger.error("Failed to persist series %s: %s", ticker, db_error)
+
+
 def choose_and_run() -> None:
     settings = KalshiSettings()
     logger = configure_logging(settings.log_level, log_dir=settings.log_directory)
@@ -55,13 +72,16 @@ def choose_and_run() -> None:
 
     events_service = EventsService(client, logger=logger)
     markets_service = MarketsService(client, logger=logger)
+    series_service = SeriesService(client, logger=logger)
     event_repository = EventRepository(settings, logger=logger)
     market_repository = MarketRepository(settings, logger=logger)
+    series_repository = SeriesRepository(settings, logger=logger)
 
     menu = (
         "Select an operation:\n"
         "1) Fetch single event by ticker (/events/{event_ticker})\n"
         "2) Fetch single market by ticker (/markets/{ticker})\n"
+        "3) Fetch single series by ticker (/series/{ticker})\n"
         "q) Quit\n"
         "Choice: "
     )
@@ -82,6 +102,13 @@ def choose_and_run() -> None:
                 continue
             logger.info("Manual run: market %s", ticker)
             sync_single_market(ticker, markets_service, market_repository, logger)
+        elif choice == "3":
+            ticker = input("Enter series ticker: ").strip()
+            if not ticker:
+                print("Ticker cannot be empty.")
+                continue
+            logger.info("Manual run: series %s", ticker)
+            sync_single_series(ticker, series_service, series_repository, logger)
         elif choice == "q":
             logger.info("Exiting manual CLI")
             break
