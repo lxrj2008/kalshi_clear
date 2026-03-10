@@ -45,7 +45,7 @@ from services.search_service import SearchService
 from websocket_listener import listen_ws
 
 
-def _job_event_listener(event, logger) -> None:
+def _job_event_listener(event, logger, settings) -> None:
 	"""Handle APScheduler job error/missed events with logging and email."""
 	event_type = "error" if event.code == EVENT_JOB_ERROR else "missed"
 	subject = f"[KalshiClear] Scheduler {event_type}: {event.job_id}"
@@ -57,7 +57,7 @@ def _job_event_listener(event, logger) -> None:
 		f"Traceback: {getattr(event, 'traceback', '')}\n"
 	)
 	logger.error("Scheduler %s for job %s", event_type, event.job_id)
-	send_email_notification(subject, body, logger)
+	send_email_notification(subject, body, logger, settings=settings)
 
 
 def main() -> None:
@@ -461,7 +461,8 @@ def main() -> None:
 
 		scheduler = BackgroundScheduler(job_defaults={"max_instances": 1, "coalesce": True})
 		scheduler.add_listener(
-			lambda event: _job_event_listener(event, logger), EVENT_JOB_ERROR | EVENT_JOB_MISSED
+			lambda event: _job_event_listener(event, logger, settings),
+			EVENT_JOB_ERROR | EVENT_JOB_MISSED,
 		)
 		scheduler.add_job(
 			run_tags_and_filters_job,

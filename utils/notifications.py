@@ -1,31 +1,37 @@
 """Notification utilities."""
 from __future__ import annotations
 
-import os
 import smtplib
 from email.message import EmailMessage
-from pathlib import Path
+from typing import Optional
 
-from dotenv import load_dotenv
-
-load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / ".env", override=False)
+from config import KalshiSettings
 
 
-def send_email_notification(subject: str, body: str, logger) -> None:
-    """Send a plain-text email using SMTP environment variables."""
-    host = os.getenv("SMTP_HOST")
-    from_addr = os.getenv("SMTP_FROM")
-    to_addr = os.getenv("SMTP_TO")
+def send_email_notification(
+    subject: str,
+    body: str,
+    logger,
+    settings: Optional[KalshiSettings] = None,
+) -> None:
+    """Send a plain-text email using SMTP configuration from KalshiSettings."""
+    cfg = settings or KalshiSettings()
+
+    host = cfg.smtp_host
+    from_addr = cfg.smtp_from
+    to_addr = cfg.smtp_to
     if not host or not from_addr or not to_addr:
         logger.warning(
             "SMTP settings missing (SMTP_HOST/SMTP_FROM/SMTP_TO); skip alert: %s",
             subject,
         )
         return
-    port = int(os.getenv("SMTP_PORT", "25"))
-    username = os.getenv("SMTP_USERNAME") or os.getenv("SMTP_USER")
-    password = os.getenv("SMTP_PASSWORD")
-    use_tls = os.getenv("SMTP_USE_TLS", "false").lower() in {"1", "true", "yes"}
+
+    port = cfg.smtp_port
+    username = cfg.smtp_username
+    password = cfg.smtp_password
+    use_tls = cfg.smtp_use_tls
+
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = from_addr

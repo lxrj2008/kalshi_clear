@@ -63,7 +63,7 @@ async def listen_ws(settings: KalshiSettings | None = None, logger: logging.Logg
             logger.info("Skip email (throttled): %s", subject)
             return
         last_email_ts = now
-        send_email_notification(subject, body, logger)
+        send_email_notification(subject, body, logger, settings=settings)
 
     async def _consume(ws):
         await _subscribe_market_lifecycle(ws)

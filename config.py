@@ -80,6 +80,43 @@ class KalshiSettings(BaseSettings):
         description="Installed ODBC driver name",
     )
 
+    # SMTP / email notification settings
+    smtp_host: Optional[str] = Field(
+        None,
+        validation_alias="SMTP_HOST",
+        description="SMTP server host for alert emails",
+    )
+    smtp_from: Optional[str] = Field(
+        None,
+        validation_alias="SMTP_FROM",
+        description="From address for alert emails",
+    )
+    smtp_to: Optional[str] = Field(
+        None,
+        validation_alias="SMTP_TO",
+        description="Recipient address for alert emails",
+    )
+    smtp_port: int = Field(
+        25,
+        validation_alias="SMTP_PORT",
+        description="SMTP server port",
+    )
+    smtp_username: Optional[str] = Field(
+        None,
+        validation_alias="SMTP_USERNAME",
+        description="SMTP username (optional)",
+    )
+    smtp_password: Optional[str] = Field(
+        None,
+        validation_alias="SMTP_PASSWORD",
+        description="SMTP password (optional)",
+    )
+    smtp_use_tls: bool = Field(
+        False,
+        validation_alias="SMTP_USE_TLS",
+        description="Whether to use STARTTLS when sending emails",
+    )
+
     @field_validator("private_key_path", mode="before")
     @classmethod
     def _expand_private_key_path(cls, value: Optional[Path]) -> Optional[Path]:
