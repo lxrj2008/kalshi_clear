@@ -17,7 +17,7 @@ from kalshi_client import (
 	KalshiAPIError,
 )
 from logging_setup import configure_logging
-from utils.notifications import send_email_notification
+from utils.notifications import send_email_notification, send_throttled_email
 from models.category_record import CategoryRecord
 from models.competition_record import CompetitionRecord
 from models.competition_scope_record import CompetitionScopeRecord
@@ -57,7 +57,16 @@ def _job_event_listener(event, logger, settings) -> None:
 		f"Traceback: {getattr(event, 'traceback', '')}\n"
 	)
 	logger.error("Scheduler %s for job %s", event_type, event.job_id)
-	send_email_notification(subject, body, logger, settings=settings)
+	# Throttle per job + event type to avoid spamming on flapping jobs.
+	key = f"scheduler:{event.job_id}:{event_type}"
+	send_throttled_email(
+		key=key,
+		subject=subject,
+		body=body,
+		logger=logger,
+		settings=settings,
+		min_interval_seconds=300.0,
+	)
 
 
 def main() -> None:

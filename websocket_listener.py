@@ -6,7 +6,6 @@ import json
 import logging
 from datetime import datetime
 from functools import partial
-import time
 from urllib.parse import urlparse, urlunparse
 
 from websockets.asyncio.client import connect
@@ -19,7 +18,7 @@ from repositories.event_repository import EventRepository
 from repositories.market_repository import MarketRepository
 from services.events_service import EventsService
 from services.markets_service import MarketsService
-from utils.notifications import send_email_notification
+from utils.notifications import send_throttled_email
 
 
 def _build_ws_url(settings: KalshiSettings) -> str:
@@ -52,18 +51,6 @@ async def listen_ws(settings: KalshiSettings | None = None, logger: logging.Logg
 
     ws_url = _build_ws_url(settings)
     logger.info("Connecting to Kalshi websocket: %s", ws_url)
-
-    last_email_ts = 0.0
-    email_min_interval = 300.0  # seconds
-
-    def _send_throttled_email(subject: str, body: str) -> None:
-        nonlocal last_email_ts
-        now = time.time()
-        if now - last_email_ts < email_min_interval:
-            logger.info("Skip email (throttled): %s", subject)
-            return
-        last_email_ts = now
-        send_email_notification(subject, body, logger, settings=settings)
 
     async def _consume(ws):
         await _subscribe_market_lifecycle(ws)
@@ -98,9 +85,10 @@ async def listen_ws(settings: KalshiSettings | None = None, logger: logging.Logg
                 backoff_seconds = 5
         except (ConnectionClosedOK, ConnectionClosedError) as exc:
             logger.warning("WebSocket closed: %s; reconnecting in %ss", exc, backoff_seconds)
-            _send_throttled_email(
-                "[KalshiClear] WebSocket closed",
-                (
+            send_throttled_email(
+                key="ws_closed",
+                subject="[KalshiClear] WebSocket closed",
+                body=(
                     f"Close type: {type(exc).__name__}\n"
                     f"Code: {getattr(exc, 'code', None)}\n"
                     f"Reason: {getattr(exc, 'reason', '')}\n"
@@ -108,24 +96,32 @@ async def listen_ws(settings: KalshiSettings | None = None, logger: logging.Logg
                     f"Next retry in: {backoff_seconds}s\n"
                     f"URL: {ws_url}"
                 ),
+                logger=logger,
+                settings=settings,
             )
         except AuthenticationConfigError as exc:
             logger.error("WebSocket auth error: %s; cannot reconnect without valid credentials", exc)
-            _send_throttled_email(
-                "[KalshiClear] WebSocket auth error",
-                f"Auth failed: {exc}\nAttempt: {attempt}\nURL: {ws_url}",
+            send_throttled_email(
+                key="ws_auth_error",
+                subject="[KalshiClear] WebSocket auth error",
+                body=f"Auth failed: {exc}\nAttempt: {attempt}\nURL: {ws_url}",
+                logger=logger,
+                settings=settings,
             )
             break
         except Exception as exc:  
             logger.error("WebSocket listener failed: %s; reconnecting in %ss", exc, backoff_seconds)
-            _send_throttled_email(
-                "[KalshiClear] WebSocket listener failure",
-                (
+            send_throttled_email(
+                key="ws_failure",
+                subject="[KalshiClear] WebSocket listener failure",
+                body=(
                     f"Listener exception: {exc}\n"
                     f"Attempt: {attempt}\n"
                     f"Next retry in: {backoff_seconds}s\n"
                     f"URL: {ws_url}"
                 ),
+                logger=logger,
+                settings=settings,
             )
 
         try:
