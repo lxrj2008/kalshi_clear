@@ -88,7 +88,7 @@ class EventRepository(BaseSQLRepository):
 
     def _merge_from_staging(self, *, total: int) -> int:
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 cursor = connection.cursor()
                 cursor.execute(self._merge_from_staging_statement)
                 rowcount = cursor.rowcount

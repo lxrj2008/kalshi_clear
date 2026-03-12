@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from typing import Sequence
 
 import pyodbc
 
 from config import KalshiSettings
+from db.connection_factory import OdbcConnectionFactory
 
 
 class DatabaseSaveError(RuntimeError):
@@ -27,6 +29,7 @@ class BaseSQLRepository(ABC):
         self.database_name = database_name
         base_logger = logger or logging.getLogger("kalshi")
         self.logger = base_logger.getChild(self.__class__.__name__.lower())
+        self._connection_factory = OdbcConnectionFactory(settings)
 
     def save_many(self, rows: Sequence[tuple[object, ...]]) -> int:
         """Persist rows using the concrete class's insert statement."""
@@ -38,7 +41,7 @@ class BaseSQLRepository(ABC):
 
     def _executemany(self, statement: str, rows: Sequence[tuple[object, ...]]) -> int:
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 cursor = connection.cursor()
                 cursor.fast_executemany = True
                 cursor.executemany(statement, rows)
@@ -53,7 +56,7 @@ class BaseSQLRepository(ABC):
 
     def _execute_update(self, statement: str, params: Sequence[object], *, log_result: bool = True) -> int:
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 cursor = connection.cursor()
                 cursor.execute(statement, params)
                 connection.commit()
@@ -65,9 +68,16 @@ class BaseSQLRepository(ABC):
             self.logger.info("Updated %s rows", rowcount)
         return rowcount
 
-    def _connect(self) -> pyodbc.Connection:
-        connection_string = self.settings.build_sqlserver_connection_string(self.database_name)
-        return pyodbc.connect(connection_string)
+    @contextmanager
+    def _connection(self) -> pyodbc.Connection:
+        """Yield a reusable per-thread connection (not closed on exit)."""
+        try:
+            with self._connection_factory.connection(self.database_name) as conn:
+                yield conn
+        except pyodbc.Error as exc:
+            # Discard the cached connection for this thread/db; it may be broken.
+            self._connection_factory.discard(self.database_name)
+            raise exc
 
     @property
     @abstractmethod

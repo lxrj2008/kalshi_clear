@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 from datetime import datetime
 from functools import partial
 from urllib.parse import urlparse, urlunparse
@@ -37,7 +38,11 @@ async def _subscribe_market_lifecycle(websocket) -> None:
     await websocket.send(json.dumps(payload))
 
 
-async def listen_ws(settings: KalshiSettings | None = None, logger: logging.Logger | None = None) -> None:
+async def listen_ws(
+    settings: KalshiSettings | None = None,
+    logger: logging.Logger | None = None,
+    stop_event: threading.Event | None = None,
+) -> None:
     settings = settings or KalshiSettings()
     logger = logger or configure_logging(settings.log_level, log_dir=settings.log_directory)
     client = KalshiAPIClient(settings, logger=logger)
@@ -69,6 +74,9 @@ async def listen_ws(settings: KalshiSettings | None = None, logger: logging.Logg
     backoff_seconds = 5
     attempt = 0
     while True:
+        if stop_event and stop_event.is_set():
+            logger.info("Stop event set; exiting websocket listener loop")
+            break
         attempt += 1
         try:
             headers = client.build_auth_headers("GET", ws_url)

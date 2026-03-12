@@ -8,6 +8,7 @@ This file intentionally stays thin:
 """
 from __future__ import annotations
 
+from threading import Event
 from time import sleep
 
 from config import KalshiSettings
@@ -43,8 +44,11 @@ def main() -> None:
     logger = configure_logging(settings.log_level, log_dir=settings.log_directory)
     client = KalshiAPIClient(settings, logger=logger)
 
+    # Global stop signal for background components (scheduler, websocket listener).
+    stop_event = Event()
+
     # Start websocket listener regardless of scheduler status (it will fail fast if auth missing).
-    start_ws_listener_thread(settings=settings, logger=logger)
+    start_ws_listener_thread(settings=settings, logger=logger, stop_event=stop_event)
 
     # Build services
     series_service = SeriesService(client)
@@ -122,7 +126,8 @@ def main() -> None:
             while True:
                 sleep(60)
         except (KeyboardInterrupt, SystemExit):
-            logger.info("Shutting down scheduler...")
+            logger.info("Stop signal received; shutting down...")
+            stop_event.set()
             scheduler.shutdown(wait=False)
 
 
