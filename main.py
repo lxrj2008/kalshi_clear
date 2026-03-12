@@ -1,38 +1,23 @@
-"""Entry point demonstrating the reusable Kalshi API client framework."""
+"""KalshiClear process entry point.
+
+This file intentionally stays thin:
+- build settings/logger/client
+- wire services + repositories
+- start websocket listener
+- run initial sync + start scheduler
+"""
 from __future__ import annotations
 
-import asyncio
-import time
-from threading import Thread
 from time import sleep
 
-from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
-
 from config import KalshiSettings
-from kalshi_client import (
-	AuthenticationConfigError,
-	KalshiAPIClient,
-	KalshiAPIError,
-)
+from kalshi_client import KalshiAPIClient
 from logging_setup import configure_logging
-from utils.notifications import send_email_notification, send_throttled_email
-from models.category_record import CategoryRecord
-from models.competition_record import CompetitionRecord
-from models.competition_scope_record import CompetitionScopeRecord
-from models.event_record import EventRecord
-from models.market_record import MarketRecord
-from models.scope_record import ScopeRecord
-from models.sport_record import SportRecord
-from models.sport_scope_record import SportScopeRecord
-from models.tag_record import TagRecord
-from repositories.base_repository import DatabaseSaveError
+from repositories.category_repository import CategoryRepository
 from repositories.competition_repository import CompetitionRepository
 from repositories.competition_scope_repository import CompetitionScopeRepository
 from repositories.event_repository import EventRepository
 from repositories.market_repository import MarketRepository
-from repositories.category_repository import CategoryRepository
 from repositories.scope_repository import ScopeRepository
 from repositories.series_repository import SeriesRepository
 from repositories.sport_repository import SportRepository
@@ -42,477 +27,104 @@ from services.events_service import EventsService
 from services.markets_service import MarketsService
 from services.series_service import SeriesService
 from services.search_service import SearchService
-from websocket_listener import listen_ws
 
-
-def _job_event_listener(event, logger, settings) -> None:
-	"""Handle APScheduler job error/missed events with logging and email."""
-	event_type = "error" if event.code == EVENT_JOB_ERROR else "missed"
-	subject = f"[KalshiClear] Scheduler {event_type}: {event.job_id}"
-	body = (
-		f"Job: {event.job_id}\n"
-		f"Type: {event_type}\n"
-		f"Scheduled: {getattr(event, 'scheduled_run_time', None)}\n"
-		f"Exception: {getattr(event, 'exception', None)}\n"
-		f"Traceback: {getattr(event, 'traceback', '')}\n"
-	)
-	logger.error("Scheduler %s for job %s", event_type, event.job_id)
-	# Throttle per job + event type to avoid spamming on flapping jobs.
-	key = f"scheduler:{event.job_id}:{event_type}"
-	send_throttled_email(
-		key=key,
-		subject=subject,
-		body=body,
-		logger=logger,
-		settings=settings,
-		min_interval_seconds=300.0,
-	)
+from runtime.scheduler_runtime import add_default_jobs, build_scheduler
+from runtime.ws_runtime import start_ws_listener_thread
+from sync.jobs import (
+    run_events_job,
+    run_markets_job,
+    run_series_job,
+    run_tags_and_filters_full_job,
+)
 
 
 def main() -> None:
-	settings = KalshiSettings()
-	logger = configure_logging(settings.log_level, log_dir=settings.log_directory)
-	client = KalshiAPIClient(settings, logger=logger)
+    settings = KalshiSettings()
+    logger = configure_logging(settings.log_level, log_dir=settings.log_directory)
+    client = KalshiAPIClient(settings, logger=logger)
 
-	def _run_ws_listener() -> None:
-		try:
-			asyncio.run(listen_ws(settings=settings, logger=logger))
-		except Exception as exc:  
-			logger.error("WebSocket listener stopped: %s", exc)
+    # Start websocket listener regardless of scheduler status (it will fail fast if auth missing).
+    start_ws_listener_thread(settings=settings, logger=logger)
 
-	ws_thread = Thread(target=_run_ws_listener, name="kalshi-ws-listener", daemon=True)
-	ws_thread.start()
-	logger.info("WebSocket listener thread started")
+    # Build services
+    series_service = SeriesService(client)
+    events_service = EventsService(client, logger=logger)
+    markets_service = MarketsService(client, logger=logger)
+    search_service = SearchService(client, logger=logger)
 
-	series_service = SeriesService(client)
-	events_service = EventsService(client, logger=logger)
-	markets_service = MarketsService(client, logger=logger)
-	search_service = SearchService(client, logger=logger)
-	series_repository = SeriesRepository(settings, logger=logger)
-	event_repository = EventRepository(settings, logger=logger)
-	market_repository = MarketRepository(settings, logger=logger)
-	category_repository = CategoryRepository(
-		settings,
-		logger=logger,
-		database_name=settings.sqlserver_secondary_database,
-	)
-	tag_repository = TagRepository(
-		settings,
-		logger=logger,
-		database_name=settings.sqlserver_secondary_database,
-	)
-	sport_repository = SportRepository(
-		settings,
-		logger=logger,
-		database_name=settings.sqlserver_secondary_database,
-	)
-	competition_repository = CompetitionRepository(
-		settings,
-		logger=logger,
-		database_name=settings.sqlserver_secondary_database,
-	)
-	scope_repository = ScopeRepository(
-		settings,
-		logger=logger,
-		database_name=settings.sqlserver_secondary_database,
-	)
-	sport_scope_repository = SportScopeRepository(
-		settings,
-		logger=logger,
-		database_name=settings.sqlserver_secondary_database,
-	)
-	competition_scope_repository = CompetitionScopeRepository(
-		settings,
-		logger=logger,
-		database_name=settings.sqlserver_secondary_database,
-	)
-	# response1 = client.call(
-    #         "get_settlements_without_preload_content", authenticated=True)
-	# response=client.sdk_client.get_settlements()
+    # Build repositories
+    series_repository = SeriesRepository(settings, logger=logger)
+    event_repository = EventRepository(settings, logger=logger)
+    market_repository = MarketRepository(settings, logger=logger)
 
-	def run_tags_and_filters_job() -> None:
-		try:
-			tags_by_categories = search_service.fetch_tags_by_categories()
-			category_records = [CategoryRecord(name=category) for category in tags_by_categories.keys()]
-			tag_records: list[TagRecord] = []
-			for category_name, tag_list in tags_by_categories.items():
-				if not tag_list:
-					continue
-				tag_records.extend(TagRecord(category=category_name, tag=tag) for tag in tag_list)
-			if category_records:
-				cat_upserted = category_repository.save_categories(category_records)
-				logger.info("Persisted %s category rows to SQL Server", cat_upserted)
-			if tag_records:
-				tag_upserted = tag_repository.save_tags(tag_records)
-				logger.info("Persisted %s tag rows to SQL Server", tag_upserted)
-		except (KalshiAPIError, AuthenticationConfigError) as api_error:
-			logger.error("Tags-by-categories request failed: %s", api_error)
-		except DatabaseSaveError as db_error:
-			logger.error("Failed to persist tag data: %s", db_error)
+    secondary_db = settings.sqlserver_secondary_database
+    category_repository = CategoryRepository(settings, logger=logger, database_name=secondary_db)
+    tag_repository = TagRepository(settings, logger=logger, database_name=secondary_db)
+    sport_repository = SportRepository(settings, logger=logger, database_name=secondary_db)
+    competition_repository = CompetitionRepository(settings, logger=logger, database_name=secondary_db)
+    scope_repository = ScopeRepository(settings, logger=logger, database_name=secondary_db)
+    sport_scope_repository = SportScopeRepository(settings, logger=logger, database_name=secondary_db)
+    competition_scope_repository = CompetitionScopeRepository(settings, logger=logger, database_name=secondary_db)
 
-		try:
-			filters_by_sport = search_service.fetch_filters_by_sport()
-			sport_records: list[SportRecord] = []
-			competition_records: list[CompetitionRecord] = []
-			scope_records: list[ScopeRecord] = []
-			sport_scope_records: list[SportScopeRecord] = []
-			competition_scope_records: list[CompetitionScopeRecord] = []
+    scheduler = None
+    if client.auth_enabled:
+        # Wrap parameterized jobs into zero-arg callables for APScheduler.
+        def tags_filters_job() -> None:
+            run_tags_and_filters_full_job(
+                search_service=search_service,
+                category_repository=category_repository,
+                tag_repository=tag_repository,
+                sport_repository=sport_repository,
+                competition_repository=competition_repository,
+                scope_repository=scope_repository,
+                sport_scope_repository=sport_scope_repository,
+                competition_scope_repository=competition_scope_repository,
+                logger=logger,
+                settings=settings,
+            )
 
-			sport_seen: set[str] = set()
-			competition_seen: set[str] = set()
-			scope_seen: set[str] = set()
-			sport_scope_seen: set[tuple[str, str]] = set()
-			competition_scope_seen: set[tuple[str, str]] = set()
+        def series_job() -> None:
+            run_series_job(series_service=series_service, series_repository=series_repository, logger=logger)
 
-			for sport_name, sport_payload in filters_by_sport.items():
-				if sport_name not in sport_seen:
-					sport_seen.add(sport_name)
-					sport_records.append(SportRecord(name=sport_name))
+        def events_job() -> None:
+            run_events_job(events_service=events_service, event_repository=event_repository, logger=logger)
 
-				sport_scopes = sport_payload.get("scopes") if isinstance(sport_payload, dict) else []
-				if isinstance(sport_scopes, list):
-					for scope in sport_scopes:
-						scope_name = str(scope).strip()
-						if not scope_name:
-							continue
-						if scope_name not in scope_seen:
-							scope_seen.add(scope_name)
-							scope_records.append(ScopeRecord(name=scope_name))
-						pair = (sport_name, scope_name)
-						if pair not in sport_scope_seen:
-							sport_scope_seen.add(pair)
-							sport_scope_records.append(
-								SportScopeRecord(sport_name=sport_name, scope_name=scope_name)
-							)
+        def markets_job(*, use_created_filter: bool = False) -> None:
+            run_markets_job(
+                markets_service=markets_service,
+                market_repository=market_repository,
+                logger=logger,
+                status="open",
+                use_created_filter=use_created_filter,
+            )
 
-				competitions = sport_payload.get("competitions") if isinstance(sport_payload, dict) else {}
-				if isinstance(competitions, dict):
-					for competition_name, comp_payload in competitions.items():
-						comp_name = str(competition_name).strip()
-						if not comp_name:
-							continue
-						if comp_name not in competition_seen:
-							competition_seen.add(comp_name)
-							competition_records.append(
-								CompetitionRecord(name=comp_name, sport_name=sport_name)
-							)
-						comp_scopes = comp_payload
-						if isinstance(comp_scopes, list):
-							for scope in comp_scopes:
-								scope_name = str(scope).strip()
-								if not scope_name:
-									continue
-								if scope_name not in scope_seen:
-									scope_seen.add(scope_name)
-									scope_records.append(ScopeRecord(name=scope_name))
-								pair = (comp_name, scope_name)
-								if pair not in competition_scope_seen:
-									competition_scope_seen.add(pair)
-									competition_scope_records.append(
-										CompetitionScopeRecord(
-											competition_name=comp_name,
-											scope_name=scope_name,
-										)
-									)
-						else:
-							logger.debug(
-								"Competition %s under sport %s has no scopes list", comp_name, sport_name
-							)
+        # Initial run once on startup.
+        tags_filters_job()
+        series_job()
+        events_job()
+        markets_job(use_created_filter=False)
 
-			logger.info(
-				"filters_by_sport parsed counts: sports=%s, competitions=%s, scopes=%s, sport_scopes=%s, competition_scopes=%s",
-				len(sport_records),
-				len(competition_records),
-				len(scope_records),
-				len(sport_scope_records),
-				len(competition_scope_records),
-			)
+        scheduler = build_scheduler(logger=logger, settings=settings)
+        add_default_jobs(
+            scheduler=scheduler,
+            run_tags_filters=tags_filters_job,
+            run_series=series_job,
+            run_events=events_job,
+            run_markets=markets_job,
+        )
+        scheduler.start()
+        logger.info("Scheduler started: tags/filters hourly; series hourly; events hourly; markets hourly")
+    else:
+        logger.warning("Skipping authenticated sync because credentials are missing.")
 
-			if sport_records:
-				sport_upserted = sport_repository.save_sports(sport_records)
-				logger.info("Persisted %s sport rows to SQL Server", sport_upserted)
-			if scope_records:
-				scope_upserted = scope_repository.save_scopes(scope_records)
-				logger.info("Persisted %s scope rows to SQL Server", scope_upserted)
-			if competition_records:
-				competition_upserted = competition_repository.save_competitions(competition_records)
-				logger.info("Persisted %s competition rows to SQL Server", competition_upserted)
-			if sport_scope_records:
-				sport_scope_upserted = sport_scope_repository.save_sport_scopes(sport_scope_records)
-				logger.info("Persisted %s sport-scope rows to SQL Server", sport_scope_upserted)
-			if competition_scope_records:
-				competition_scope_upserted = competition_scope_repository.save_competition_scopes(
-					competition_scope_records
-				)
-				logger.info(
-					"Persisted %s competition-scope rows to SQL Server",
-					competition_scope_upserted,
-				)
-		except (KalshiAPIError, AuthenticationConfigError) as api_error:
-			logger.error("Filters-by-sport request failed: %s", api_error)
-		except DatabaseSaveError as db_error:
-			logger.error("Failed to persist filters-by-sport data: %s", db_error)
-
-	def run_series_job() -> None:
-		try:
-			records = series_service.list_series_records(include_volume=True)
-			logger.info("Received %s series rows", len(records))
-			inserted = series_repository.save_series(records)
-			logger.info("Persisted %s series rows to SQL Server", inserted)
-		except KalshiAPIError as api_error:
-			logger.error("Series request failed: %s", api_error)
-		except DatabaseSaveError as db_error:
-			logger.error("Failed to persist series data: %s", db_error)
-
-	def run_events_job() -> None:
-		try:
-			cursor = None
-			total_rows = 0
-			page = 1
-			buffer: list[EventRecord] = []
-			buffer_target = 10_000
-			status_filter = "open"
-			retry_attempt = 0
-			max_retries = 10
-			event_repository.reset_staging()
-			logger.info("Applying events status filter: %s", status_filter)
-			while True:
-				try:
-					event_records, milestones, cursor = events_service.list_event_records(
-						limit=200,
-						cursor=cursor,
-						status=status_filter,
-					)
-					retry_attempt = 0
-				except KalshiAPIError as api_error:
-					if buffer:
-						try:
-							upserted = event_repository.save_events(buffer, manage_truncate=False)
-							logger.info(
-								"Persisted %s event rows before retry (buffer flush)", upserted
-							)
-							total_rows += upserted
-							buffer.clear()
-						except DatabaseSaveError as db_error:
-							logger.error(
-								"Failed to persist buffered event rows before retry (cursor=%s): %s",
-								cursor,
-								db_error,
-							)
-					retry_attempt += 1
-					if retry_attempt > max_retries:
-						logger.error(
-							"Events request failed too many times on page %s (cursor=%s); aborting this run",
-							page,
-							cursor,
-						)
-						break
-					backoff_seconds = min(2**retry_attempt, 60)
-					logger.warning(
-						"Events request failed on page %s (cursor=%s): %s; retrying after %ss",
-						page,
-						cursor,
-						api_error,
-						backoff_seconds,
-					)
-					sleep(backoff_seconds)
-					continue
-				logger.info(
-					"Fetched %s events on page %s (next cursor=%s)",
-					len(event_records),
-					page,
-					cursor,
-				)
-				if event_records:
-					buffer.extend(event_records)
-					if len(buffer) >= buffer_target:
-						try:
-							upserted = event_repository.save_events(buffer, manage_truncate=False)
-							logger.info(
-								"Persisted %s event rows to SQL Server (buffer flush)", upserted
-							)
-							total_rows += upserted
-							buffer.clear()
-						except DatabaseSaveError as db_error:
-							logger.error(
-								"Failed to persist event rows on page %s (cursor=%s): %s",
-								page,
-								cursor,
-								db_error,
-							)
-				page += 1
-				if not cursor:
-					break
-			if buffer:
-				try:
-					upserted = event_repository.save_events(buffer, manage_truncate=False)
-					logger.info("Persisted %s remaining event rows to SQL Server", upserted)
-					total_rows += upserted
-				except DatabaseSaveError as db_error:
-					logger.error("Failed to persist remaining event rows: %s", db_error)
-			event_repository.reset_staging()
-			logger.info("Completed event sync; total rows persisted: %s", total_rows)
-		except KalshiAPIError as api_error:
-			logger.error("Events request failed: %s", api_error)
-		except DatabaseSaveError as db_error:
-			logger.error("Failed to persist event data: %s", db_error)
-
-	def run_markets_job(*, status: str | None = None, use_created_filter: bool = False) -> None:
-		try:
-			market_cursor = None
-			market_total_rows = 0
-			market_page = 1
-			buffer: list[MarketRecord] = []
-			buffer_target = 10_000
-			min_created_ts = int(time.time()) - 18_000 if use_created_filter else None
-			retry_attempt = 0
-			max_retries = 10
-			if status:
-				logger.info("Applying markets status filter: %s", status)
-			if min_created_ts is not None:
-				logger.info("Applying markets min_created_ts filter: %s", min_created_ts)
-			market_repository.reset_staging()
-			while True:
-				try:
-					filters = {"limit": 1000, "cursor": market_cursor}
-					if status:
-						filters["status"] = status
-					if min_created_ts is not None:
-						filters["min_created_ts"] = min_created_ts
-					market_records, market_cursor = markets_service.list_market_records(**filters)
-					retry_attempt = 0
-				except KalshiAPIError as api_error:
-					if buffer:
-						try:
-							upserted = market_repository.save_markets(buffer, manage_truncate=False)
-							logger.info(
-								"Persisted %s market rows before retry (buffer flush)",
-								upserted,
-							)
-							market_total_rows += upserted
-							buffer.clear()
-						except DatabaseSaveError as db_error:
-							logger.error(
-								"Failed to persist buffered market rows before retry (cursor=%s): %s",
-								market_cursor,
-								db_error,
-							)
-					retry_attempt += 1
-					if retry_attempt > max_retries:
-						logger.error(
-							"Markets request failed too many times on page %s (cursor=%s); aborting this run",
-							market_page,
-							market_cursor,
-						)
-						break
-					backoff_seconds = min(2**retry_attempt, 60)
-					logger.warning(
-						"Markets request failed on page %s (cursor=%s): %s; retrying after %ss",
-						market_page,
-						market_cursor,
-						api_error,
-						backoff_seconds,
-					)
-					sleep(backoff_seconds)
-					continue
-				logger.info(
-					"Fetched %s markets on page %s (next cursor=%s)",
-					len(market_records),
-					market_page,
-					market_cursor,
-				)
-				if market_records:
-					buffer.extend(market_records)
-					if len(buffer) >= buffer_target:
-						try:
-							upserted = market_repository.save_markets(buffer, manage_truncate=False)
-							logger.info(
-								"Persisted %s market rows to SQL Server (buffer flush)",
-								upserted,
-							)
-							market_total_rows += upserted
-							buffer.clear()
-						except DatabaseSaveError as db_error:
-							logger.error(
-								"Failed to persist market rows on page %s (cursor=%s): %s",
-								market_page,
-								market_cursor,
-								db_error,
-							)
-				if not market_cursor:
-					break
-				market_page += 1
-			if buffer:
-				try:
-					upserted = market_repository.save_markets(buffer, manage_truncate=False)
-					logger.info("Persisted %s remaining market rows to SQL Server", upserted)
-					market_total_rows += upserted
-				except DatabaseSaveError as db_error:
-					logger.error("Failed to persist remaining market rows: %s", db_error)
-			market_repository.reset_staging()
-			logger.info(
-				"Completed market sync; total rows persisted: %s",
-				market_total_rows,
-			)
-		except KalshiAPIError as api_error:
-			logger.error("Markets request failed: %s", api_error)
-		except DatabaseSaveError as db_error:
-			logger.error("Failed to persist market data: %s", db_error)
-
-	scheduler: BackgroundScheduler | None = None
-
-	if client.auth_enabled:
-		run_tags_and_filters_job()
-		run_series_job()
-		run_events_job()
-		run_markets_job(status="open", use_created_filter=False)
-		
-
-		scheduler = BackgroundScheduler(job_defaults={"max_instances": 1, "coalesce": True})
-		scheduler.add_listener(
-			lambda event: _job_event_listener(event, logger, settings),
-			EVENT_JOB_ERROR | EVENT_JOB_MISSED,
-		)
-		scheduler.add_job(
-			run_tags_and_filters_job,
-			CronTrigger(minute=0),
-			id="tags_filters_job",
-			replace_existing=True,
-		)
-		scheduler.add_job(
-			run_series_job,
-			CronTrigger(minute=5),
-			id="series_job",
-			replace_existing=True,
-		)
-		scheduler.add_job(
-			run_events_job,
-			CronTrigger(minute=10),
-			id="events_job",
-			replace_existing=True,
-		)
-		scheduler.add_job(
-			run_markets_job,
-			CronTrigger(minute=30),
-			kwargs={"use_created_filter": True},
-			id="markets_job",
-			replace_existing=True,
-		)
-		scheduler.start()
-		logger.info(
-			"Scheduler started: tags/filters hourly; series hourly; events hourly; markets hourly"
-		)
-	else:
-		logger.warning("Skipping authenticated example because credentials are missing.")
-
-	if scheduler:
-		try:
-			while True:
-				sleep(60)
-		except (KeyboardInterrupt, SystemExit):
-			logger.info("Shutting down scheduler...")
-			scheduler.shutdown(wait=False)
+    if scheduler:
+        try:
+            while True:
+                sleep(60)
+        except (KeyboardInterrupt, SystemExit):
+            logger.info("Shutting down scheduler...")
+            scheduler.shutdown(wait=False)
 
 
 if __name__ == "__main__":
-	main()
+    main()
