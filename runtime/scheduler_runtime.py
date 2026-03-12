@@ -70,7 +70,7 @@ def add_default_jobs(
     )
     scheduler.add_job(
         run_markets,
-        CronTrigger(minute=30),
+        CronTrigger(minute=15),
         kwargs={"use_created_filter": True},
         id="markets_job",
         replace_existing=True,
