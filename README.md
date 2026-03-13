@@ -61,7 +61,7 @@ pip install -r requirements.txt
   - `SMTP_USE_TLS`
 - WebSocket 监听（可选，用于高频推送调优）：
   - `WS_WORKER_COUNT`（默认 `4`，范围 `1-32`，消息处理 worker 数）
-  - `WS_QUEUE_MAXSIZE`（默认 `2000`，`0` 表示无界队列）
+  - `WS_QUEUE_MAXSIZE`（默认 `5000`，`0` 表示无界队列）
   - `WS_QUEUE_MONITOR_INTERVAL_SECONDS`（默认 `30`，范围 `5-3600`，队列监控日志间隔）
 
 可以在项目根目录创建 `.env` 并填入上述变量；此文件已在 `.gitignore` 中忽略。
