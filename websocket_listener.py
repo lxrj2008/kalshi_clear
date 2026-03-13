@@ -38,6 +38,40 @@ async def _subscribe_market_lifecycle(websocket) -> None:
     await websocket.send(json.dumps(payload))
 
 
+def _resolve_close_code(exc: ConnectionClosedError | ConnectionClosedOK) -> int | None:
+    code = getattr(exc, "code", None)
+    if code is not None:
+        return code
+    received = getattr(exc, "rcvd", None)
+    if received is not None:
+        received_code = getattr(received, "code", None)
+        if received_code is not None:
+            return received_code
+    sent = getattr(exc, "sent", None)
+    if sent is not None:
+        sent_code = getattr(sent, "code", None)
+        if sent_code is not None:
+            return sent_code
+    return None
+
+
+def _resolve_close_reason(exc: ConnectionClosedError | ConnectionClosedOK) -> str:
+    reason = getattr(exc, "reason", "")
+    if reason:
+        return str(reason)
+    received = getattr(exc, "rcvd", None)
+    if received is not None:
+        received_reason = getattr(received, "reason", "")
+        if received_reason:
+            return str(received_reason)
+    sent = getattr(exc, "sent", None)
+    if sent is not None:
+        sent_reason = getattr(sent, "reason", "")
+        if sent_reason:
+            return str(sent_reason)
+    return str(exc)
+
+
 async def listen_ws(
     settings: KalshiSettings | None = None,
     logger: logging.Logger | None = None,
@@ -58,18 +92,79 @@ async def listen_ws(
     logger.info("Connecting to Kalshi websocket: %s", ws_url)
 
     async def _consume(ws):
+        worker_count = settings.ws_worker_count
+        queue_maxsize = settings.ws_queue_maxsize
+        monitor_interval_seconds = settings.ws_queue_monitor_interval_seconds
+        message_queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=queue_maxsize)
+
+        async def _worker(worker_id: int) -> None:
+            while True:
+                raw_message = await message_queue.get()
+                if raw_message is None:
+                    message_queue.task_done()
+                    logger.info("WebSocket worker %s stopped", worker_id)
+                    return
+                try:
+                    await _handle_message(
+                        raw_message,
+                        markets_service,
+                        market_repo,
+                        events_service,
+                        event_repo,
+                        logger,
+                    )
+                except Exception as exc:
+                    logger.error("WebSocket worker %s failed handling message: %s", worker_id, exc)
+                finally:
+                    message_queue.task_done()
+
+        async def _queue_monitor() -> None:
+            while True:
+                await asyncio.sleep(monitor_interval_seconds)
+                queued = message_queue.qsize()
+                if queued <= 0:
+                    continue
+                if queue_maxsize > 0:
+                    utilization = (queued / queue_maxsize) * 100
+                    level = logging.WARNING if utilization >= 80 else logging.INFO
+                    logger.log(
+                        level,
+                        "WebSocket queue depth=%s/%s (%.1f%%)",
+                        queued,
+                        queue_maxsize,
+                        utilization,
+                    )
+                else:
+                    logger.info("WebSocket queue depth=%s (unbounded)", queued)
+
+        workers = [
+            asyncio.create_task(_worker(index + 1), name=f"ws-worker-{index + 1}")
+            for index in range(worker_count)
+        ]
+        monitor_task = asyncio.create_task(_queue_monitor(), name="ws-queue-monitor")
+
         await _subscribe_market_lifecycle(ws)
         logger.info("WebSocket connected and subscribed to market_lifecycle_v2; awaiting messages...")
-        async for message in ws:
-            logger.info("WebSocket message: %s", message)
-            await _handle_message(
-                message,
-                markets_service,
-                market_repo,
-                events_service,
-                event_repo,
-                logger,
-            )
+        logger.info(
+            "WebSocket processing queue started (workers=%s, queue_maxsize=%s)",
+            worker_count,
+            queue_maxsize,
+        )
+
+        try:
+            async for message in ws:
+                logger.info("WebSocket message: %s", message)
+                await message_queue.put(message)
+        finally:
+            await message_queue.join()
+            for _ in workers:
+                await message_queue.put(None)
+            await asyncio.gather(*workers, return_exceptions=True)
+            monitor_task.cancel()
+            try:
+                await monitor_task
+            except asyncio.CancelledError:
+                pass
 
     backoff_seconds = 5
     attempt = 0
@@ -93,13 +188,18 @@ async def listen_ws(
                 backoff_seconds = 5
         except (ConnectionClosedOK, ConnectionClosedError) as exc:
             logger.warning("WebSocket closed: %s; reconnecting in %ss", exc, backoff_seconds)
+            close_code = _resolve_close_code(exc)
+            close_reason = _resolve_close_reason(exc)
             send_throttled_email(
                 key="ws_closed",
                 subject="[KalshiClear] WebSocket closed",
                 body=(
                     f"Close type: {type(exc).__name__}\n"
-                    f"Code: {getattr(exc, 'code', None)}\n"
-                    f"Reason: {getattr(exc, 'reason', '')}\n"
+                    f"Code: {close_code}\n"
+                    f"Reason: {close_reason}\n"
+                    f"Exception: {exc}\n"
+                    f"Close sent: {getattr(exc, 'sent', None)}\n"
+                    f"Close received: {getattr(exc, 'rcvd', None)}\n"
                     f"Attempt: {attempt}\n"
                     f"Next retry in: {backoff_seconds}s\n"
                     f"URL: {ws_url}"
@@ -202,7 +302,7 @@ async def _handle_market_created(
         return
 
     try:
-        await loop.run_in_executor(None, partial(market_repo.save_markets, manage_truncate=False), [record])
+        await loop.run_in_executor(None, market_repo.save_markets_direct, [record])
         logger.info("Saved new market record for ticker=%s", ticker)
     except Exception as exc:  
         logger.error("Failed to persist market %s: %s", ticker, exc)
@@ -268,7 +368,7 @@ async def _handle_market_update(
 
         try:
             await loop.run_in_executor(
-                None, partial(market_repo.save_markets, manage_truncate=False), [record]
+                None, market_repo.save_markets_direct, [record]
             )
             logger.info("Inserted market ticker=%s after zero-update fallback", ticker)
         except Exception as exc:  
@@ -299,7 +399,7 @@ async def _handle_event_created(
 
     try:
         await loop.run_in_executor(
-            None, partial(event_repo.save_events, manage_truncate=False), [record]
+            None, event_repo.save_events_direct, [record]
         )
         logger.info("Saved new event record for event_ticker=%s", event_ticker)
     except Exception as exc:

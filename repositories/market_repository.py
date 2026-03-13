@@ -99,8 +99,6 @@ class MarketRepository(BaseSQLRepository):
         rows = [self._build_row(record) for record in records]
         if not rows:
             return 0
-        if manage_truncate:
-            self._truncate_staging()
         batch_size = 10000
         for index in range(0, len(rows), batch_size):
             batch = rows[index : index + batch_size]
@@ -108,6 +106,12 @@ class MarketRepository(BaseSQLRepository):
         affected = self._merge_from_staging(total=len(rows))
         self._truncate_staging()
         return affected
+
+    def save_markets_direct(self, records: Sequence[MarketRecord]) -> int:
+        rows = [self._build_row(record) for record in records]
+        if not rows:
+            return 0
+        return self._executemany(self.insert_statement, rows)
 
     def reset_staging(self) -> None:
         """Explicitly truncate the staging table; callers can control boundaries."""

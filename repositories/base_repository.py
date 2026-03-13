@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
-from typing import Sequence
+from typing import Iterator, Sequence
 
 import pyodbc
 
@@ -32,7 +32,6 @@ class BaseSQLRepository(ABC):
         self._connection_factory = OdbcConnectionFactory(settings)
 
     def save_many(self, rows: Sequence[tuple[object, ...]]) -> int:
-        """Persist rows using the concrete class's insert statement."""
         if not rows:
             self.logger.info("No rows supplied; skipping insert.")
             return 0
@@ -69,13 +68,12 @@ class BaseSQLRepository(ABC):
         return rowcount
 
     @contextmanager
-    def _connection(self) -> pyodbc.Connection:
+    def _connection(self) -> Iterator[pyodbc.Connection]:
         """Yield a reusable per-thread connection (not closed on exit)."""
         try:
             with self._connection_factory.connection(self.database_name) as conn:
                 yield conn
         except pyodbc.Error as exc:
-            # Discard the cached connection for this thread/db; it may be broken.
             self._connection_factory.discard(self.database_name)
             raise exc
 

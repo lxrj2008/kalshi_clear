@@ -117,6 +117,27 @@ class KalshiSettings(BaseSettings):
         description="Whether to use STARTTLS when sending emails",
     )
 
+    ws_worker_count: int = Field(
+        4,
+        validation_alias="WS_WORKER_COUNT",
+        description="Number of async workers processing websocket messages",
+        ge=1,
+        le=32,
+    )
+    ws_queue_maxsize: int = Field(
+        2000,
+        validation_alias="WS_QUEUE_MAXSIZE",
+        description="Max buffered websocket messages; 0 means unbounded queue",
+        ge=0,
+    )
+    ws_queue_monitor_interval_seconds: int = Field(
+        30,
+        validation_alias="WS_QUEUE_MONITOR_INTERVAL_SECONDS",
+        description="Polling interval in seconds for websocket queue depth monitor logs",
+        ge=5,
+        le=3600,
+    )
+
     @field_validator("private_key_path", mode="before")
     @classmethod
     def _expand_private_key_path(cls, value: Optional[Path]) -> Optional[Path]:

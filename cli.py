@@ -23,7 +23,7 @@ def sync_single_event(ticker: str, events_service: EventsService, event_reposito
             logger.warning("No event returned for ticker=%s", ticker)
             return
         pprint(record.to_dict())
-        upserted = event_repository.save_events([record])
+        upserted = event_repository.save_events_direct([record])
         logger.info("Persisted %s event row(s) for ticker=%s", upserted, ticker)
     except KalshiAPIError as api_error:
         logger.error("Event request failed for %s: %s", ticker, api_error)
@@ -38,7 +38,7 @@ def sync_single_market(ticker: str, markets_service: MarketsService, market_repo
             logger.warning("No market returned for ticker=%s", ticker)
             return
         pprint(record.to_dict())
-        upserted = market_repository.save_markets([record])
+        upserted = market_repository.save_markets_direct([record])
         logger.info("Persisted %s market row(s) for ticker=%s", upserted, ticker)
     except KalshiAPIError as api_error:
         logger.error("Market request failed for %s: %s", ticker, api_error)

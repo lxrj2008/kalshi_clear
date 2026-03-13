@@ -47,7 +47,6 @@ def _get_value(source: Any, attribute: str) -> Any:
 
 @dataclass(frozen=True)
 class SeriesRecord:
-    """Normalized view of a Kalshi series suitable for persistence."""
 
     ticker: str
     category: Optional[str]
