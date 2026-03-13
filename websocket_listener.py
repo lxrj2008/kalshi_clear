@@ -166,7 +166,7 @@ async def listen_ws(
             except asyncio.CancelledError:
                 pass
 
-    backoff_seconds = 5
+    reconnect_delay_seconds = 1
     attempt = 0
     while True:
         if stop_event and stop_event.is_set():
@@ -185,9 +185,8 @@ async def listen_ws(
                 logger.info("WebSocket connected (attempt %s); subscribed and consuming", attempt)
                 await _consume(websocket)
                 attempt = 0
-                backoff_seconds = 5
         except (ConnectionClosedOK, ConnectionClosedError) as exc:
-            logger.warning("WebSocket closed: %s; reconnecting in %ss", exc, backoff_seconds)
+            logger.warning("WebSocket closed: %s; reconnecting in %ss", exc, reconnect_delay_seconds)
             close_code = _resolve_close_code(exc)
             close_reason = _resolve_close_reason(exc)
             send_throttled_email(
@@ -201,7 +200,7 @@ async def listen_ws(
                     f"Close sent: {getattr(exc, 'sent', None)}\n"
                     f"Close received: {getattr(exc, 'rcvd', None)}\n"
                     f"Attempt: {attempt}\n"
-                    f"Next retry in: {backoff_seconds}s\n"
+                    f"Next retry in: {reconnect_delay_seconds}s\n"
                     f"URL: {ws_url}"
                 ),
                 logger=logger,
@@ -218,14 +217,14 @@ async def listen_ws(
             )
             break
         except Exception as exc:  
-            logger.error("WebSocket listener failed: %s; reconnecting in %ss", exc, backoff_seconds)
+            logger.error("WebSocket listener failed: %s; reconnecting in %ss", exc, reconnect_delay_seconds)
             send_throttled_email(
                 key="ws_failure",
                 subject="[KalshiClear] WebSocket listener failure",
                 body=(
                     f"Listener exception: {exc}\n"
                     f"Attempt: {attempt}\n"
-                    f"Next retry in: {backoff_seconds}s\n"
+                    f"Next retry in: {reconnect_delay_seconds}s\n"
                     f"URL: {ws_url}"
                 ),
                 logger=logger,
@@ -233,10 +232,9 @@ async def listen_ws(
             )
 
         try:
-            await asyncio.sleep(backoff_seconds)
+            await asyncio.sleep(reconnect_delay_seconds)
         except asyncio.CancelledError:
             break
-        backoff_seconds = min(backoff_seconds * 2, 60)
 
 
 async def _handle_message(
