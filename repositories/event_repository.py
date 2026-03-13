@@ -39,7 +39,7 @@ class EventRepository(BaseSQLRepository):
         self.table_name = table_name
         self.staging_table = staging_table
 
-    def save_events(self, records: Sequence[EventRecord], *, manage_truncate: bool = True) -> int:
+    def save_events(self, records: Sequence[EventRecord]) -> int:
         rows = [self._build_row(record) for record in records]
         if not rows:
             return 0

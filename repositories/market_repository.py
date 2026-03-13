@@ -95,7 +95,7 @@ class MarketRepository(BaseSQLRepository):
         self.table_name = table_name
         self.staging_table = staging_table
 
-    def save_markets(self, records: Sequence[MarketRecord], *, manage_truncate: bool = True) -> int:
+    def save_markets(self, records: Sequence[MarketRecord]) -> int:
         rows = [self._build_row(record) for record in records]
         if not rows:
             return 0

@@ -361,7 +361,7 @@ def run_events_job(
         return records, next_cursor
 
     def flush(buffer: list[EventRecord]) -> int:
-        return event_repository.save_events(buffer, manage_truncate=False)
+        return event_repository.save_events(buffer)
 
     plan = SyncPlan(
         name="event",
@@ -399,7 +399,7 @@ def run_markets_job(
         return records, next_cursor
 
     def flush(buffer: list[MarketRecord]) -> int:
-        return market_repository.save_markets(buffer, manage_truncate=False)
+        return market_repository.save_markets(buffer)
 
     plan = SyncPlan(
         name="market",

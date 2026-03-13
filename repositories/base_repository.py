@@ -31,13 +31,6 @@ class BaseSQLRepository(ABC):
         self.logger = base_logger.getChild(self.__class__.__name__.lower())
         self._connection_factory = OdbcConnectionFactory(settings)
 
-    def save_many(self, rows: Sequence[tuple[object, ...]]) -> int:
-        if not rows:
-            self.logger.info("No rows supplied; skipping insert.")
-            return 0
-        statement = self.insert_statement
-        return self._executemany(statement, rows)
-
     def _executemany(self, statement: str, rows: Sequence[tuple[object, ...]]) -> int:
         try:
             with self._connection() as connection:
