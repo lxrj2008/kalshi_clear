@@ -80,36 +80,23 @@ class MarketRecord:
     settlement_timer_seconds: Optional[int]
     status: Optional[str]
     response_price_units: Optional[str]
-    yes_bid: Optional[float]
     yes_bid_dollars: Optional[float]
     yes_bid_size_fp: Optional[float]
-    yes_ask: Optional[float]
     yes_ask_dollars: Optional[float]
     yes_ask_size_fp: Optional[float]
-    no_bid: Optional[float]
     no_bid_dollars: Optional[float]
-    no_ask: Optional[float]
     no_ask_dollars: Optional[float]
-    last_price: Optional[float]
     last_price_dollars: Optional[float]
-    volume: Optional[int]
     volume_fp: Optional[float]
-    volume_24h: Optional[int]
     volume_24h_fp: Optional[float]
     result: Optional[str]
     can_close_early: Optional[bool]
     fractional_trading_enabled: Optional[bool]
-    open_interest: Optional[int]
     open_interest_fp: Optional[float]
-    notional_value: Optional[int]
     notional_value_dollars: Optional[float]
-    previous_yes_bid: Optional[float]
     previous_yes_bid_dollars: Optional[float]
-    previous_yes_ask: Optional[float]
     previous_yes_ask_dollars: Optional[float]
-    previous_price: Optional[float]
     previous_price_dollars: Optional[float]
-    liquidity: Optional[float]
     liquidity_dollars: Optional[float]
     expiration_value: Optional[str]
     tick_size: Optional[int]
@@ -154,44 +141,31 @@ class MarketRecord:
             settlement_timer_seconds=_as_int(_get_value(item, "settlement_timer_seconds")),
             status=_get_value(item, "status"),
             response_price_units=_get_value(item, "response_price_units"),
-            yes_bid=_as_float(_get_value(item, "yes_bid")),
             yes_bid_dollars=_as_float(_get_value(item, "yes_bid_dollars")),
             yes_bid_size_fp=_as_float(_get_value(item, "yes_bid_size_fp")),
-            yes_ask=_as_float(_get_value(item, "yes_ask")),
             yes_ask_dollars=_as_float(_get_value(item, "yes_ask_dollars")),
             yes_ask_size_fp=_as_float(_get_value(item, "yes_ask_size_fp")),
-            no_bid=_as_float(_get_value(item, "no_bid")),
             no_bid_dollars=_as_float(_get_value(item, "no_bid_dollars")),
-            no_ask=_as_float(_get_value(item, "no_ask")),
             no_ask_dollars=_as_float(_get_value(item, "no_ask_dollars")),
-            last_price=_as_float(_get_value(item, "last_price")),
             last_price_dollars=_as_float(_get_value(item, "last_price_dollars")),
-            volume=_as_int(_get_value(item, "volume")),
             volume_fp=_as_float(_get_value(item, "volume_fp")),
-            volume_24h=_as_int(_get_value(item, "volume_24h")),
             volume_24h_fp=_as_float(_get_value(item, "volume_24h_fp")),
             result=_get_value(item, "result"),
             can_close_early=_as_bool(_get_value(item, "can_close_early")),
             fractional_trading_enabled=_as_bool(
                 _get_value(item, "fractional_trading_enabled")
             ),
-            open_interest=_as_int(_get_value(item, "open_interest")),
             open_interest_fp=_as_float(_get_value(item, "open_interest_fp")),
-            notional_value=_as_int(_get_value(item, "notional_value")),
             notional_value_dollars=_as_float(_get_value(item, "notional_value_dollars")),
-            previous_yes_bid=_as_float(_get_value(item, "previous_yes_bid")),
             previous_yes_bid_dollars=_as_float(
                 _get_value(item, "previous_yes_bid_dollars")
             ),
-            previous_yes_ask=_as_float(_get_value(item, "previous_yes_ask")),
             previous_yes_ask_dollars=_as_float(
                 _get_value(item, "previous_yes_ask_dollars")
             ),
-            previous_price=_as_float(_get_value(item, "previous_price")),
             previous_price_dollars=_as_float(
                 _get_value(item, "previous_price_dollars")
             ),
-            liquidity=_as_float(_get_value(item, "liquidity")),
             liquidity_dollars=_as_float(_get_value(item, "liquidity_dollars")),
             expiration_value=_get_value(item, "expiration_value"),
             tick_size=_as_int(_get_value(item, "tick_size")),
