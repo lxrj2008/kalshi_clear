@@ -7,3 +7,4 @@ pyodbc>=5.3.0
 requests>=2.32.5
 websockets>=16.0
 apscheduler>=3.11.2
+wget==3.2
