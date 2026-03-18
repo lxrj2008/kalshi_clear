@@ -125,7 +125,7 @@ class KalshiSettings(BaseSettings):
         le=32,
     )
     ws_queue_maxsize: int = Field(
-        5000,
+        10000,
         validation_alias="WS_QUEUE_MAXSIZE",
         description="Max buffered websocket messages; 0 means unbounded queue",
         ge=0,
