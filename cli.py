@@ -89,26 +89,29 @@ def choose_and_run() -> None:
     while True:
         choice = input(menu).strip().lower()
         if choice == "1":
-            ticker = input("Enter event ticker: ").strip()
-            if not ticker:
+            tickers = input("Enter event ticker(s), separated by commas: ").strip()
+            if not tickers:
                 print("Ticker cannot be empty.")
                 continue
-            logger.info("Manual run: event %s", ticker)
-            sync_single_event(ticker, events_service, event_repository, logger)
+            for ticker in [t.strip() for t in tickers.split(",") if t.strip()]:
+                logger.info("Manual run: event %s", ticker)
+                sync_single_event(ticker, events_service, event_repository, logger)
         elif choice == "2":
-            ticker = input("Enter market ticker: ").strip()
-            if not ticker:
+            tickers = input("Enter market ticker(s), separated by commas: ").strip()
+            if not tickers:
                 print("Ticker cannot be empty.")
                 continue
-            logger.info("Manual run: market %s", ticker)
-            sync_single_market(ticker, markets_service, market_repository, logger)
+            for ticker in [t.strip() for t in tickers.split(",") if t.strip()]:
+                logger.info("Manual run: market %s", ticker)
+                sync_single_market(ticker, markets_service, market_repository, logger)
         elif choice == "3":
-            ticker = input("Enter series ticker: ").strip()
-            if not ticker:
+            tickers = input("Enter series ticker(s), separated by commas: ").strip()
+            if not tickers:
                 print("Ticker cannot be empty.")
                 continue
-            logger.info("Manual run: series %s", ticker)
-            sync_single_series(ticker, series_service, series_repository, logger)
+            for ticker in [t.strip() for t in tickers.split(",") if t.strip()]:
+                logger.info("Manual run: series %s", ticker)
+                sync_single_series(ticker, series_service, series_repository, logger)
         elif choice == "q":
             logger.info("Exiting manual CLI")
             break
