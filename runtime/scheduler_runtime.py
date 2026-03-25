@@ -49,6 +49,7 @@ def add_default_jobs(
     run_series,
     run_events,
     run_markets,
+    run_markets_cleanup,
 ) -> None:
     scheduler.add_job(
         run_tags_filters,
@@ -73,6 +74,12 @@ def add_default_jobs(
         CronTrigger(minute=15),
         kwargs={"use_created_filter": True},
         id="markets_job",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_markets_cleanup,
+        CronTrigger(minute=20),
+        id="markets_cleanup_job",
         replace_existing=True,
     )
 

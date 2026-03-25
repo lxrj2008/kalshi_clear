@@ -34,6 +34,7 @@ from runtime.ws_runtime import start_ws_listener_thread
 from sync.jobs import (
     run_events_job,
     run_markets_job,
+    run_markets_cleanup_job,
     run_series_job,
     run_tags_and_filters_full_job,
 )
@@ -102,7 +103,15 @@ def main() -> None:
                 use_created_filter=use_created_filter,
             )
 
+        def markets_cleanup_job() -> None:
+            run_markets_cleanup_job(
+                market_repository=market_repository,
+                logger=logger,
+                settled_days=2,
+            )
+
         # Initial run once on startup.
+        markets_cleanup_job()
         tags_filters_job()
         series_job()
         events_job()
@@ -115,9 +124,12 @@ def main() -> None:
             run_series=series_job,
             run_events=events_job,
             run_markets=markets_job,
+            run_markets_cleanup=markets_cleanup_job,
         )
         scheduler.start()
-        logger.info("Scheduler started: tags/filters hourly; series hourly; events hourly; markets hourly")
+        logger.info(
+            "Scheduler started: tags/filters hourly; series hourly; events hourly; markets hourly; markets cleanup hourly"
+        )
     else:
         logger.warning("Skipping authenticated sync because credentials are missing.")
 

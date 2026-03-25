@@ -104,6 +104,15 @@ class MarketRepository(BaseSQLRepository):
         """Explicitly truncate the staging table; callers can control boundaries."""
         self._truncate_staging()
 
+    def delete_settled_before_days(self, *, days: int = 2) -> int:
+        """Delete settled market rows older than the given day window."""
+        statement = (
+            f"DELETE FROM {self.table_name} "
+            "WHERE status = ? AND settlement_ts IS NOT NULL "
+            "AND settlement_ts < DATEADD(day, ?, GETDATE())"
+        )
+        return self._execute_update(statement, ["settled", -days])
+
     def update_market_fields(
         self,
         ticker: str,

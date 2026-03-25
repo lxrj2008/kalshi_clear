@@ -413,11 +413,31 @@ def run_markets_job(
     )
 
 
+def run_markets_cleanup_job(
+    *,
+    market_repository: MarketRepository,
+    logger: logging.Logger,
+    settled_days: int = 2,
+) -> int:
+    try:
+        deleted = market_repository.delete_settled_before_days(days=settled_days)
+        logger.info(
+            "Deleted %s settled market rows older than %s day(s)",
+            deleted,
+            settled_days,
+        )
+        return deleted
+    except DatabaseSaveError as db_error:
+        logger.error("Failed to delete settled market rows: %s", db_error)
+        return 0
+
+
 __all__ = [
     "RetryPolicy",
     "run_tags_and_filters_full_job",
     "run_series_job",
     "run_events_job",
     "run_markets_job",
+    "run_markets_cleanup_job",
 ]
 
